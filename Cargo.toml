@@ -1,0 +1,10 @@
+[package]
+name = "cas-rs"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+#ndarray = { version = "0.15", no-default-features = true }
+nalgebra = { version = "0.30", default-features = false }
