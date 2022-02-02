@@ -5,8 +5,10 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies]
+[build-dependencies]
 csv = "1"
+proc-macro2 = "1"
 quote = "1"
-nalgebra = { version = "0.30", default-features = false, features = ["macros"] }
 
+[dependencies]
+nalgebra = { version = "0.30", default-features = false, features = ["macros"] }
