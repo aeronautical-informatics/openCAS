@@ -7,4 +7,6 @@ edition = "2021"
 
 [dependencies]
 csv = "1"
-nalgebra = { version = "0.30", default-features = false }
+quote = "1"
+nalgebra = { version = "0.30", default-features = false, features = ["macros"] }
+

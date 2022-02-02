@@ -32,7 +32,7 @@ pub struct NNet<
 ///
 /// + The matrix is of the dimension `OUTPUT_NEURONS` rows x `INPUT_NEURONS` columns
 /// + The vector is of the dimension `OUTPUT_NEURONS`
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Layer<const INPUT_NEURONS: usize, const OUTPUT_NEURONS: usize> {
     pub a: Matrix<OUTPUT_NEURONS, INPUT_NEURONS>,
     pub biases: Vector<OUTPUT_NEURONS>,
