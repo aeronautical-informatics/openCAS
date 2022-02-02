@@ -9,7 +9,29 @@ use std::{
     process::Command,
 };
 
-/// Parse a nnet file, and emits the
+macro_rules! line_to_vec {
+    // `()` indicates that the macro takes no argument.
+    ($line:expr, $expected_num_of_elements:expr) => {{
+        let maybe_line_elements: Result<Vec<_>, _> = $line
+            .iter()
+            .filter(|s| !s.is_empty())
+            .map(|s| s.parse())
+            .collect();
+
+        let line_elements = maybe_line_elements.unwrap();
+        let elements_present = line_elements.len();
+        let elements_expected = $expected_num_of_elements;
+        assert_eq!(
+            elements_present, elements_expected,
+            "expected {elements_expected} elements,
+                    but found {elements_present} elements"
+        );
+
+        line_elements
+    }};
+}
+
+/// Parse a nnet file, and emits the equivalent token stream
 fn parse_nnet<P: AsRef<Path>>(nnet_file: P, name: &str) -> TokenStream {
     // open the nnet file, create a buffered reader and feed everything to the csv crate
     let f = File::open(nnet_file).expect("file does not exits: {nnet_file}");
@@ -36,55 +58,20 @@ fn parse_nnet<P: AsRef<Path>>(nnet_file: P, name: &str) -> TokenStream {
         // stupid humans count from one
         match line_no + 1 {
             1 => {
-                let mut value_iter = line.iter().map(|s| s.parse());
+                let values = line_to_vec!(line, 4);
 
-                num_layer = value_iter.next().expect("no value available").unwrap();
-                n_input = value_iter.next().expect("no value available").unwrap();
-                n_output = value_iter.next().expect("no value available").unwrap();
-                n_neuron = value_iter.next().expect("no value available").unwrap();
+                num_layer = values[0];
+                n_input = values[1];
+                n_output = values[2];
+                n_neuron = values[3];
                 n_mat = num_layer - 2;
             }
-            2 => {
-                let maybe_nodes_per_layer: Result<_, _> = line
-                    .iter()
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.parse())
-                    .collect();
-                nodes_per_layer = maybe_nodes_per_layer.unwrap();
-            }
+            2 => nodes_per_layer = line_to_vec!(line, num_layer + 1),
             3 => {} // can be ignored
-            4 => {
-                let maybe_min_input: Result<_, _> = line
-                    .iter()
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.parse())
-                    .collect();
-                min_input = maybe_min_input.unwrap();
-            }
-            5 => {
-                let maybe_max_input: Result<_, _> = line
-                    .iter()
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.parse())
-                    .collect();
-                max_input = maybe_max_input.unwrap();
-            }
-            6 => {
-                let maybe_mean: Result<_, _> = line
-                    .iter()
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.parse())
-                    .collect();
-                mean = maybe_mean.unwrap();
-            }
-            7 => {
-                let maybe_range: Result<_, _> = line
-                    .iter()
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.parse())
-                    .collect();
-                range = maybe_range.unwrap();
-            }
+            4 => min_input = line_to_vec!(line, n_input),
+            5 => max_input = line_to_vec!(line, n_input),
+            6 => mean = line_to_vec!(line, n_input + 1),
+            7 => range = line_to_vec!(line, n_input + 1),
             _ => panic!("We should have never landed here.."),
         }
     }
@@ -99,21 +86,10 @@ fn parse_nnet<P: AsRef<Path>>(nnet_file: P, name: &str) -> TokenStream {
         let num_cols = nodes_per_layer[layer];
         let num_rows = nodes_per_layer[layer + 1];
 
-        let current_weights: Vec<Vec<f32>> = csv_reader
+        let current_weights = csv_reader
             .records() // go through the lines
             .take(num_rows) // take exactly as many as we expect lines
-            .map(|maybe_record| {
-                // each record (line) itself is an iterator
-                let record = maybe_record
-                    .unwrap();
-                let result = record.iter()
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.parse().unwrap())
-                    .collect::<Vec<_>>();
-                let cols_actual = result.len();
-                assert_eq!(result.len(), num_cols, "weights matrix has wrong number of columns: expected {num_cols}, found {cols_actual}") ;
-                result
-            })
+            .map(|maybe_record| line_to_vec!(maybe_record.unwrap(), num_cols))
             //.flatten()
             .collect();
 
