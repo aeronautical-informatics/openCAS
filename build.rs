@@ -160,7 +160,9 @@ fn parse_nnet<P: AsRef<Path>>(nnet_file: P, name: &str) -> TokenStream {
                 } ),*
             ],
             output_layer: Layer {
-                a: matrix![ #( #( #output_weights ),* );* ],
+                a: matrix![ #(
+                       #( #output_weights ),*
+                    );* ],
                 biases: vector![ #( #output_biases ),* ],
             },
             min_input: vector![ #( #min_input ),* ],
@@ -190,7 +192,9 @@ fn main() {
 
         let token_tree = parse_nnet(path, &name.strip_suffix(".nnet").unwrap());
 
-        fs::write(&dest_path, format!("{}", token_tree.to_string())).unwrap();
+        // linebreak after `;` with nice indentation to make the matrices readable
+        let indent = format!(";\n{}", " ".repeat(12));
+        fs::write(&dest_path, token_tree.to_string().replace(';', &indent)).unwrap();
     }
 
     // format the generated source code
