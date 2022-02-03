@@ -3,14 +3,13 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use std::{
     env,
-    fs::{self, File, OpenOptions},
-    io::{BufReader, Write},
-    path::Path,
+    fs::{self, File},
+    io::BufReader,
+    path::{Path, PathBuf},
     process::Command,
 };
 
 macro_rules! line_to_vec {
-    // `()` indicates that the macro takes no argument.
     ($line:expr, $expected_num_of_elements:expr) => {{
         let maybe_line_elements: Result<Vec<_>, _> = $line
             .iter()
@@ -31,8 +30,13 @@ macro_rules! line_to_vec {
     }};
 }
 
-/// Parse a nnet file, and emits the equivalent token stream
-fn parse_nnet<P: AsRef<Path>>(nnet_file: P, name: &str) -> TokenStream {
+/// Parse a `.nnet` file, and emits the equivalent `TokenStream` to instantiat an equal `NNet`
+/// struct
+///
+/// Returns a tuple consisting of two elements:
+/// + `TokenStream` instantiating the `NNet` struct
+/// + `TokenStream` describing the type of said `NNet` struct
+fn parse_nnet<P: AsRef<Path>>(nnet_file: P) -> (TokenStream, TokenStream) {
     // open the nnet file, create a buffered reader and feed everything to the csv crate
     let f = File::open(nnet_file).expect("file does not exits: {nnet_file}");
     let mut csv_reader = csv::ReaderBuilder::new()
@@ -112,9 +116,8 @@ fn parse_nnet<P: AsRef<Path>>(nnet_file: P, name: &str) -> TokenStream {
         biases.push(current_biases);
     }
 
-
     //nnet file has been read by now
-    //splitting generated vectors into the right sizes for the struct NNet 
+    //splitting generated vectors into the right sizes for the struct NNet
     // see also documentation of https://github.com/sisl/NNet
     let input_biases = biases.remove(0);
     let input_weights = weights.remove(0);
@@ -125,64 +128,81 @@ fn parse_nnet<P: AsRef<Path>>(nnet_file: P, name: &str) -> TokenStream {
     let mean_output = mean.pop().unwrap();
     let range_output = range.pop().unwrap();
 
-    let ident = quote::format_ident!("{name}");
-
-    quote!(
-        const #ident: NNet<#n_input, #n_mat, #n_neuron, #n_output> = NNet {
-            input_layer: Layer {
-                a: matrix![ #( #( #input_weights ),* );* ],
-                biases: vector![ #( #input_biases ),* ],
-            },
-            hidden_layers: [
-                #( Layer {
-                    a: matrix![ #( #( #weights ),* );* ],
-                    biases: vector![ #( #biases ),* ],
-                } ),*
-            ],
-            output_layer: Layer {
-                a: matrix![ #(
-                       #( #output_weights ),*
-                    );* ],
-                biases: vector![ #( #output_biases ),* ],
-            },
-            min_input: vector![ #( #min_input ),* ],
-            max_input: vector![ #( #max_input ),* ],
-            mean_value: vector![ #( #mean ),* ],
-            range: vector![ #( #range ),* ],
-            mean_output: #mean_output,
-            range_output: #range_output,
-        };
+    (
+        quote!(
+         NNet {
+                input_layer: Layer {
+                    a: matrix![ #( #( #input_weights ),* );* ],
+                    biases: vector![ #( #input_biases ),* ],
+                },
+                hidden_layers: [
+                    #( Layer {
+                        a: matrix![ #( #( #weights ),* );* ],
+                        biases: vector![ #( #biases ),* ],
+                    } ),*
+                ],
+                output_layer: Layer {
+                    a: matrix![ #( #( #output_weights ),* );* ],
+                    biases: vector![ #( #output_biases ),* ],
+                },
+                min_input: vector![ #( #min_input ),* ],
+                max_input: vector![ #( #max_input ),* ],
+                mean_value: vector![ #( #mean ),* ],
+                range: vector![ #( #range ),* ],
+                mean_output: #mean_output,
+                range_output: #range_output,
+            }
+        ),
+        quote!(NNet<#n_input, #n_mat, #n_neuron, #n_output>),
     )
 }
 
+fn hcas_nnets() -> TokenStream {
+    let pra_values = [0, 1, 2, 3, 4];
+    let tau_values = [0, 5, 10, 15, 20, 30, 40, 60];
+    let format_name = |pra, tau| format!("HCAS_rect_v6_pra{pra}_tau{tau:02}_25HU_3000.nnet");
+    let required_nnets = pra_values
+        .iter()
+        .map(|pra| tau_values.iter().map(move |tau| format_name(pra, tau)))
+        .flatten();
+
+    let (parsed_nnets, parsed_nnet_types): (Vec<TokenStream>, Vec<TokenStream>) = required_nnets
+        .map(|n| parse_nnet(PathBuf::from("nnets").join(n)))
+        .unzip();
+
+    // Our expectation is, that all nnet files withing the HCAS have the same type (as in
+    // dimensions). Thus the TokenStream describing their type must be equal. However, TokenStreams
+    // can not be compared. Therefore we render the TokenStreams into Strings, and compare the
+    // Strings.
+    let nnet_type = &parsed_nnet_types[0];
+    assert!(parsed_nnet_types
+        .iter()
+        .all(|n| n.to_string() == nnet_type.to_string()));
+
+    let chunked_nnets = parsed_nnets.chunks(tau_values.len());
+    let pra_value_count = pra_values.len();
+    let tau_value_count = tau_values.len();
+
+    quote!(
+        /// NNet structs of the Horizontal CAS
+        const HCAS_NNETS: [ [ #nnet_type ; #tau_value_count]; #pra_value_count ] =
+            [ #(
+                [ #(
+                    #chunked_nnets
+                ),* ]
+            ),* ];
+    )
+}
 
 fn main() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("nnets.rs");
 
-    let mut f = OpenOptions::new().write(true).create(true).open(&dest_path).unwrap();
+    let token_tree = hcas_nnets();
 
-    for maybe_nnet_file in fs::read_dir("nnets")
-        .unwrap()
-        .map(|e| e.unwrap())
-        .filter(|e| e.metadata()
-        .unwrap()
-        .is_file() && e.file_name().to_str().unwrap().ends_with(".nnet"))
-    {
-        //panic!("{:?}", maybe_nnet_file.file_name());
+    let indent = format!(";\n{}", " ".repeat(20));
 
-        let path = maybe_nnet_file.path();
-        let name = path.file_name().unwrap().to_str().unwrap().to_string();
-
-        let token_tree = parse_nnet(path, &name.strip_suffix(".nnet").unwrap());
-
-
-        // linebreak after `;` with nice indentation to make the matrices readable
-        let indent = format!(";\n{}", " ".repeat(12));
-       // fs::write(&dest_path, token_tree.to_string().replace(';', &indent)).unwrap();
-        write!(&mut f, "{}", token_tree.to_string().replace(';', &indent)).unwrap();
-
-    }
+    fs::write(&dest_path, token_tree.to_string().replace(';', &indent)).unwrap();
 
     // format the generated source code
     if let Err(e) = Command::new("rustfmt")
