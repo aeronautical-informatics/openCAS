@@ -3,8 +3,8 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use std::{
     env,
-    fs::{self, File},
-    io::BufReader,
+    fs::{self, File, OpenOptions},
+    io::{BufReader, Write},
     path::Path,
     process::Command,
 };
@@ -112,6 +112,10 @@ fn parse_nnet<P: AsRef<Path>>(nnet_file: P, name: &str) -> TokenStream {
         biases.push(current_biases);
     }
 
+
+    //nnet file has been read by now
+    //splitting generated vectors into the right sizes for the struct NNet 
+    // see also documentation of https://github.com/sisl/NNet
     let input_biases = biases.remove(0);
     let input_weights = weights.remove(0);
 
@@ -151,26 +155,33 @@ fn parse_nnet<P: AsRef<Path>>(nnet_file: P, name: &str) -> TokenStream {
     )
 }
 
+
 fn main() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("nnets.rs");
 
+    let mut f = OpenOptions::new().write(true).create(true).open(&dest_path).unwrap();
+
     for maybe_nnet_file in fs::read_dir("nnets")
         .unwrap()
         .map(|e| e.unwrap())
-        .filter(|e| e.metadata().unwrap().is_file())
+        .filter(|e| e.metadata()
+        .unwrap()
+        .is_file() && e.file_name().to_str().unwrap().ends_with(".nnet"))
     {
-        // TODO check that path is a file
-        // TODO check that path ends with `.nnet`
+        //panic!("{:?}", maybe_nnet_file.file_name());
 
         let path = maybe_nnet_file.path();
         let name = path.file_name().unwrap().to_str().unwrap().to_string();
 
         let token_tree = parse_nnet(path, &name.strip_suffix(".nnet").unwrap());
 
+
         // linebreak after `;` with nice indentation to make the matrices readable
         let indent = format!(";\n{}", " ".repeat(12));
-        fs::write(&dest_path, token_tree.to_string().replace(';', &indent)).unwrap();
+       // fs::write(&dest_path, token_tree.to_string().replace(';', &indent)).unwrap();
+        write!(&mut f, "{}", token_tree.to_string().replace(';', &indent)).unwrap();
+
     }
 
     // format the generated source code

@@ -57,15 +57,6 @@ impl<const N_INPUT: usize, const N_MAT: usize, const N_NEURON: usize, const N_OU
         }
     }
 
-    /*
-    for (i, e) in inputs.iter_mut().enumerate(){
-
-        if *e < self.min_input[i] {
-            *e = (self.min_input[i] - self.mean_value[i])/self.range[i];
-        }
-
-    }*/
-
     /// Evaluates a neuronal network with specific inputs
     pub fn eval(&self, mut inputs: Vector<N_INPUT>) -> Vector<N_OUTPUT> {
         // TODO normalize inputs
@@ -94,8 +85,16 @@ impl<const N_INPUT: usize, const N_MAT: usize, const N_NEURON: usize, const N_OU
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use std::{
+        env,
+        fs::{self, File},
+        io::BufReader,
+        path::Path,
+        process::Command,
+    };
 
+    use super::*;
+/*
     #[test]
     fn first_test() {
         let mut my_vec: Vector<3> = Vector::from_column_slice(&[-1.0, 2.0, 3.0]);
@@ -106,14 +105,29 @@ mod test {
                 *i = 33.3
             }
         }
-
+        
         assert_eq!(my_vec[0], 33.3);
 
         let my_mat: Matrix<2, 3> = Matrix::from_row_slice(&[
             1.0, 2.0, 3.0, // first row
             4.0, 1.0, 8.0, // second row
         ]);
-        //panic!("Oh no! Just kidding, we hijack the fact that panic prints are outputted on test runs to print from a test:\n{:?}", my_mat * my_vec);
+    }
+*/
+    #[test]
+    fn file_debug() {
+        for maybe_nnet_file in fs::read_dir("nnets")
+        .unwrap()
+        .map(|e| e.unwrap())
+        .filter(|e| e.metadata().unwrap().is_file() && e.file_name().to_str().unwrap().ends_with(".nnet"))
+        {
+            // TODO check that path is a file -> should be taken care of by .is_file()   
+            
+
+            // TODO check that path ends with `.nnet`
+            println!("{:?}", maybe_nnet_file);
+
+        }        
     }
 }
 
