@@ -32,8 +32,9 @@ mod nnets {
 /// In doing so, the input data will be passed through all network layers and an evaluation will be given as the network output.
 mod inference;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HCas {
-    last_advisory: HAdvisory,
+    pub last_advisory: HAdvisory,
 }
 
 /// HAdvisory stores all possible output evaluations.
@@ -85,7 +86,7 @@ impl HCas {
         let evaluated = nnet.eval(inputs);
         let priority = evaluated.max();
 
-        let advisory = match evaluated.imax() {
+        self.last_advisory = match evaluated.imax() {
             0 => HAdvisory::ClearOfConflict,
             1 => HAdvisory::WeakLeft,
             2 => HAdvisory::WeakRight,
@@ -94,6 +95,6 @@ impl HCas {
             _ => todo!(),
         };
 
-        (advisory, priority)
+        (self.last_advisory, priority)
     }
 }
