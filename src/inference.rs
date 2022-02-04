@@ -64,7 +64,7 @@ impl<const N_INPUT: usize, const N_MAT: usize, const N_NEURON: usize, const N_OU
 
         // TODO check the actual core of the algorithm, is it correct?
         let mut accumulator =
-            (self.input_layer.a * &inputs + self.input_layer.biases).sup(&Vector::zeros());
+            (self.input_layer.a * inputs + self.input_layer.biases).sup(&Vector::zeros());
 
         for layer in &self.hidden_layers {
             accumulator = (layer.a * accumulator + layer.biases).sup(&Vector::zeros());
@@ -94,40 +94,41 @@ mod test {
     };
 
     use super::*;
-/*
-    #[test]
-    fn first_test() {
-        let mut my_vec: Vector<3> = Vector::from_column_slice(&[-1.0, 2.0, 3.0]);
-        // assert_eq!(my_vec[0],1.0);
+    /*
+        #[test]
+        fn first_test() {
+            let mut my_vec: Vector<3> = Vector::from_column_slice(&[-1.0, 2.0, 3.0]);
+            // assert_eq!(my_vec[0],1.0);
 
-        for i in my_vec.iter_mut() {
-            if i < &mut 0.0 {
-                *i = 33.3
+            for i in my_vec.iter_mut() {
+                if i < &mut 0.0 {
+                    *i = 33.3
+                }
             }
-        }
-        
-        assert_eq!(my_vec[0], 33.3);
 
-        let my_mat: Matrix<2, 3> = Matrix::from_row_slice(&[
-            1.0, 2.0, 3.0, // first row
-            4.0, 1.0, 8.0, // second row
-        ]);
-    }
-*/
+            assert_eq!(my_vec[0], 33.3);
+
+            let my_mat: Matrix<2, 3> = Matrix::from_row_slice(&[
+                1.0, 2.0, 3.0, // first row
+                4.0, 1.0, 8.0, // second row
+            ]);
+        }
+    */
     #[test]
     fn file_debug() {
         for maybe_nnet_file in fs::read_dir("nnets")
-        .unwrap()
-        .map(|e| e.unwrap())
-        .filter(|e| e.metadata().unwrap().is_file() && e.file_name().to_str().unwrap().ends_with(".nnet"))
+            .unwrap()
+            .map(|e| e.unwrap())
+            .filter(|e| {
+                e.metadata().unwrap().is_file()
+                    && e.file_name().to_str().unwrap().ends_with(".nnet")
+            })
         {
-            // TODO check that path is a file -> should be taken care of by .is_file()   
-            
+            // TODO check that path is a file -> should be taken care of by .is_file()
 
             // TODO check that path ends with `.nnet`
             println!("{:?}", maybe_nnet_file);
-
-        }        
+        }
     }
 }
 

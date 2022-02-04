@@ -12,3 +12,4 @@ quote = "1"
 
 [dependencies]
 nalgebra = { version = "0.30", default-features = false, features = ["macros"] }
+uom = { version = "0", default-features = false, features = ["f32", "u8", "si"] }

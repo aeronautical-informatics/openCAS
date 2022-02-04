@@ -86,7 +86,7 @@ fn parse_nnet<P: AsRef<Path>>(nnet_file: P) -> (TokenStream, TokenStream) {
 
     let mut layer = 0;
 
-    while layer <= num_layer - 1 {
+    while layer < num_layer {
         let num_cols = nodes_per_layer[layer];
         let num_rows = nodes_per_layer[layer + 1];
 
@@ -185,7 +185,7 @@ fn hcas_nnets() -> TokenStream {
 
     quote!(
         /// NNet structs of the Horizontal CAS
-        const HCAS_NNETS: [ [ #nnet_type ; #tau_value_count]; #pra_value_count ] =
+        pub const HCAS_NNETS: [ [ #nnet_type ; #tau_value_count]; #pra_value_count ] =
             [ #(
                 [ #(
                     #chunked_nnets
