@@ -1,12 +1,13 @@
 [package]
-name = "cas-rs"
+name = "opencas"
 version = "0.2.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [profile.release]
-opt-level = "s"
+debug = false
 lto = true
+opt-level = "s"
 overflow-checks = false
 
 

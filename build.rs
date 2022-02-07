@@ -9,11 +9,10 @@ use std::{
     process::Command,
 };
 
-
-/// This macro is simplifying some code later on. 
-/// 
+/// This macro is simplifying some code later on.
+///
 /// It is doing what its name promises: converts a line (string) into a vector.
-/// While doing that it filters empty fields and checks if the assumed elements within the line 
+/// While doing that it filters empty fields and checks if the assumed elements within the line
 /// match with the actual elements.
 macro_rules! line_to_vec {
     ($line:expr, $expected_num_of_elements:expr) => {{
@@ -193,7 +192,7 @@ fn hcas_nnets() -> TokenStream {
 
     quote!(
         /// NNet structs of the Horizontal CAS
-        pub const HCAS_NNETS: [ [ #nnet_type ; #tau_value_count]; #pra_value_count ] =
+        pub const HCAS_NNETS: [ [ #nnet_type ; #tau_value_count ]; #pra_value_count ] =
             [ #(
                 [ #(
                     #chunked_nnets

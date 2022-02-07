@@ -10,16 +10,16 @@ pub type Vector<const ROWS: usize> = SVector<f32, ROWS>;
 ///   `n` hidden layers `N_MAT == n - 1`
 /// + `N_NEURON` is the count of neurons per layer
 /// + `N_OUTPUT` is the number of output variables
-/// 
+///
 /// The struct fields contain all information about the network.
-/// + `input_layer` holds the weight matrix and bias vector for calculating the transitions 
+/// + `input_layer` holds the weight matrix and bias vector for calculating the transitions
 ///    from the input neurons the the neurons of the first hidden layer.
 /// + `hidden_layers` hold all `N_MAT` matrices and vectors that are necessary for the transitions from
 ///    hidden layer 1 to hidden layer n.
 /// + `output_layer` contains the weight matrix and bias vector to transition to the output neurons.
 /// + `min_input`, `max_input`, `mean_value` and `range` are necessary to perform input normalization.
-/// + `mean_output` and `range_output` are used to undo normalization for output values. 
-/// 
+/// + `mean_output` and `range_output` are used to undo normalization for output values.
+///
 /// For more information on that, read up [here](https://github.com/sisl/nnet).
 #[derive(Debug)]
 pub struct NNet<
@@ -60,7 +60,6 @@ impl<const N_INPUT: usize, const N_MAT: usize, const N_NEURON: usize, const N_OU
     /// it is easy to do via matrix and vector multiplication and addition.
     /// ´Undo_normalize()` will reverse the normalization so the result becomes more interpretable.
     pub fn eval(&self, mut inputs: Vector<N_INPUT>) -> Vector<N_OUTPUT> {
-        
         self.normalize(&mut inputs);
 
         //Doing the actual network evaluation
@@ -73,7 +72,6 @@ impl<const N_INPUT: usize, const N_MAT: usize, const N_NEURON: usize, const N_OU
 
         let mut output = self.output_layer.a * accumulator + self.output_layer.biases;
 
-        
         self.undo_normalize(&mut output);
 
         output
@@ -102,7 +100,7 @@ impl<const N_INPUT: usize, const N_MAT: usize, const N_NEURON: usize, const N_OU
     }
 
     /// Undo normalization on network outputs:
-    /// 
+    ///
     /// This reverses the normalization for all network outputs and makes the result interpredable.
     fn undo_normalize(&self, inputs: &mut Vector<N_OUTPUT>) {
         *inputs = (*inputs * self.range_output).add_scalar(self.mean_output)
