@@ -8,7 +8,7 @@ use uom::si::{
     time::second,
 };
 
-use cas_rs::*;
+use opencas::*;
 
 fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("hcas");

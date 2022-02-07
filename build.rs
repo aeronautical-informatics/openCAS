@@ -201,15 +201,50 @@ fn hcas_nnets() -> TokenStream {
     )
 }
 
+fn vcas_nnets() -> TokenStream {
+    let pra_values = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    let format_name = |pra| format!("VertCAS_pra{pra:02}_v4_45HU_200.nnet");
+    let required_nnets = pra_values.iter().map(format_name);
+
+    let (parsed_nnets, parsed_nnet_types): (Vec<TokenStream>, Vec<TokenStream>) = required_nnets
+        .map(|n| parse_nnet(PathBuf::from("nnets").join(n)))
+        .unzip();
+
+    // Our expectation is, that all nnet files withing the HCAS have the same type (as in
+    // dimensions). Thus the TokenStream describing their type must be equal. However, TokenStreams
+    // can not be compared. Therefore we render the TokenStreams into Strings, and compare the
+    // Strings.
+    let nnet_type = &parsed_nnet_types[0];
+    assert!(parsed_nnet_types
+        .iter()
+        .all(|n| n.to_string() == nnet_type.to_string()));
+
+    let pra_value_count = pra_values.len();
+
+    quote!(
+        /// NNet structs of the Horizontal CAS
+        pub const VCAS_NNETS: [ #pra_value_count ] =
+            [ #(
+                #parsed_nnets
+            ),* ];
+    )
+}
+
 fn main() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("nnets.rs");
 
-    let token_tree = hcas_nnets();
+    let hcas_tree = hcas_nnets();
+    let vcas_tree = vcas_nnets();
 
     let indent = format!(";\n{}", " ".repeat(20));
 
-    fs::write(&dest_path, token_tree.to_string().replace(';', &indent)).unwrap();
+    let combined = quote!(
+        #hcas_tree
+        #vcas_tree
+    );
+
+    fs::write(&dest_path, combined.to_string().replace(';', &indent)).unwrap();
 
     // format the generated source code
     if let Err(e) = Command::new("rustfmt")
