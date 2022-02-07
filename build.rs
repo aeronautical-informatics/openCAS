@@ -9,6 +9,12 @@ use std::{
     process::Command,
 };
 
+
+/// This macro is simplifying some code later on. 
+/// 
+/// It is doing what its name promises: converts a line (string) into a vector.
+/// While doing that it filters empty fields and checks if the assumed elements within the line 
+/// match with the actual elements.
 macro_rules! line_to_vec {
     ($line:expr, $expected_num_of_elements:expr) => {{
         let maybe_line_elements: Result<Vec<_>, _> = $line
@@ -45,7 +51,7 @@ fn parse_nnet<P: AsRef<Path>>(nnet_file: P) -> (TokenStream, TokenStream) {
         .trim(Trim::All)
         .from_reader(BufReader::new(f));
 
-    //making storage for nnet values
+    //making storage for nnet values (see NNet struct items)
     let mut n_input: usize = 0;
     let mut n_mat: usize = 0;
     let mut n_neuron: usize = 0;
@@ -57,7 +63,8 @@ fn parse_nnet<P: AsRef<Path>>(nnet_file: P) -> (TokenStream, TokenStream) {
     let mut mean: Vec<f32> = Vec::new();
     let mut range: Vec<f32> = Vec::new();
 
-    //parse header
+    // parse header
+    // for the first run, just read the first 8 lines. Here, all the normalization and general information about the network is stored (see NNet doc).
     for (line_no, line) in csv_reader.records().take(7).map(|e| e.unwrap()).enumerate() {
         // stupid humans count from one
         match line_no + 1 {
@@ -80,7 +87,7 @@ fn parse_nnet<P: AsRef<Path>>(nnet_file: P) -> (TokenStream, TokenStream) {
         }
     }
 
-    //parse data
+    // parse data aka the rest of the file and store it within those vectors
     let mut biases: Vec<Vec<f32>> = Vec::with_capacity(num_layer);
     let mut weights: Vec<Vec<Vec<f32>>> = Vec::with_capacity(num_layer);
 
@@ -118,7 +125,6 @@ fn parse_nnet<P: AsRef<Path>>(nnet_file: P) -> (TokenStream, TokenStream) {
 
     //nnet file has been read by now
     //splitting generated vectors into the right sizes for the struct NNet
-    // see also documentation of https://github.com/sisl/NNet
     let input_biases = biases.remove(0);
     let input_weights = weights.remove(0);
 
@@ -128,6 +134,7 @@ fn parse_nnet<P: AsRef<Path>>(nnet_file: P) -> (TokenStream, TokenStream) {
     let mean_output = mean.pop().unwrap();
     let range_output = range.pop().unwrap();
 
+    // write the parsed data into the NNet struct form.
     (
         quote!(
          NNet {
@@ -157,6 +164,7 @@ fn parse_nnet<P: AsRef<Path>>(nnet_file: P) -> (TokenStream, TokenStream) {
     )
 }
 
+/// This will read all nnet files within the `nnet` folder and generate a TokenStream that contains all the parsed information in  the NNet struct format.
 fn hcas_nnets() -> TokenStream {
     let pra_values = [0, 1, 2, 3, 4];
     let tau_values = [0, 5, 10, 15, 20, 30, 40, 60];

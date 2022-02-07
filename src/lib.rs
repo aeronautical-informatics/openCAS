@@ -33,6 +33,8 @@ mod nnets {
 mod inference;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+
+/// This will store the last given advisory in order to locate the correct network in the evaluation. 
 pub struct HCas {
     pub last_advisory: HAdvisory,
 }
