@@ -223,7 +223,7 @@ fn vcas_nnets() -> TokenStream {
 
     quote!(
         /// NNet structs of the Horizontal CAS
-        pub const VCAS_NNETS: [ #pra_value_count ] =
+        pub const VCAS_NNETS: [ #nnet_type ; #pra_value_count ] =
             [ #(
                 #parsed_nnets
             ),* ];
