@@ -5,11 +5,12 @@
 //! This project currently focuses to use the done work on embedded systems in safety critical environments. Therefore, the orginal code made in
 //! Python and Julia is not sufficient.
 //! Currently the project only implements the code of HorizontalCAS. The implementation of VerticalCAS is coming soon.
+#![no_std]
 
 use inference::Vector;
-use uom::si::f32::*;
-//use uom:: si::u8::*;
+use num::Float;
 use uom::si::angle::radian;
+use uom::si::f32::*;
 use uom::si::length::foot;
 use uom::si::time::second;
 use uom::si::velocity::foot_per_minute;
@@ -169,5 +170,21 @@ impl VCas {
         };
 
         (self.last_advisory, priority)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use inference::NNet;
+
+    use std::mem::size_of;
+
+    #[test]
+    pub fn check_sizes() {
+        let hcas = size_of::<[[NNet<3usize, 4usize, 25usize, 5usize>; 8usize]; 5usize]>() as f64
+            / 2f64.powi(10);
+        let hcas_nnet = size_of::<NNet<3usize, 4usize, 25usize, 5usize>>() as f64 / 2f64.powi(10);
+        panic!("size_of(hcas) {hcas}, size_of(hcas+nnet) {hcas_nnet}");
     }
 }

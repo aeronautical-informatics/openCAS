@@ -3,11 +3,15 @@ name = "opencas"
 version = "0.2.0"
 edition = "2021"
 
+
+[lib]
+crate-type = ["dylib"]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [profile.release]
 debug = false
 lto = true
-opt-level = "s"
+opt-level = "z"
 overflow-checks = false
 
 
@@ -16,11 +20,10 @@ csv = "1"
 proc-macro2 = "1"
 quote = "1"
 
-
 [dependencies]
 nalgebra = { version = "0.30", default-features = false, features = [ "macros" ] }
+num = { version = "*", default-features = false, features = [ "libm" ] }
 uom = { version = "0", default-features = false, features = [ "f32", "si" ] }
-
 
 [dev-dependencies]
 criterion = { version = "0.3", features = [ "html_reports" ] } 
