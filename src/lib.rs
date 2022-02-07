@@ -56,10 +56,15 @@ impl HCas {
     /// The smaller networks are in return specifically trained just for a certain set of possible scenerios.
     /// The purpose of this method is to pick the best specialized network to the current situation.
     /// This is done by correlating the remaining time until inpact `tau` [sec] and the last given advisory in `HCas`
-    /// to the given networks. once this is done, the current inputs `range` [ft],
-    ///  `theta`('bearing' angle from home ship to intruder) [rad] and
+    /// to the given networks. 
+    /// 
+    /// Once this is done, the current inputs `range` [ft], 
+    /// `theta`('bearing' angle from homeship to intruder) [rad] and
     /// `psi` (bearing angle of intruder relative to flight direction of the homeship) [rad] are fed through to
     /// the correct network.   
+    /// 
+    /// The angles are measured in the mathematical sense, e.g. `theta` = 5° => intruder is slidely on the left of the homeships heading.
+    /// If `psi` was 90° or pi/2, it would mean that the intruder was flying to the left perpendicular to the homeships heading. See [figure 3](https://arxiv.org/pdf/1912.07084.pdf).
     pub fn process(
         &mut self,
         tau: Time,
@@ -80,8 +85,8 @@ impl HCas {
 
         let nnet = &nnets::HCAS_NNETS[self.last_advisory as usize][index];
         let inputs: Vector<3> = nalgebra::vector![
-            range.get::<foot>(),
-            theta.get::<radian>(),
+            range.get::<foot>() * theta.get::<radian>().cos(),
+            range.get::<foot>() * theta.get::<radian>().sin(),
             psi.get::<radian>()
         ];
 
