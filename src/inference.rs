@@ -107,3 +107,59 @@ impl<const N_INPUT: usize, const N_MAT: usize, const N_NEURON: usize, const N_OU
         *inputs = (*inputs * self.range_output).add_scalar(self.mean_output)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use nalgebra::{matrix, vector};
+
+    #[test]
+    fn basic_inference_example() {
+        let nnet = NNet {
+            input_layer: Layer {
+                a: matrix![
+                    2.0, 3.0;
+                    1.0, 2.0
+                ],
+                biases: vector![5.0, 3.0],
+            },
+            hidden_layers: [
+                // layer 1
+                Layer {
+                    a: matrix![
+                        2.0, 3.0;
+                        1.0, 2.0
+                    ],
+                    biases: vector![5.0, 3.0],
+                },
+                // layer 2
+                Layer {
+                    a: matrix![
+                        2.0, 3.0;
+                        1.0, 2.0
+                    ],
+                    biases: vector![5.0, 3.0],
+                },
+            ],
+            output_layer: Layer {
+                a: matrix![
+                    2.0, 3.0;
+                    1.0, 2.0
+                ],
+                biases: vector![5.0, 3.0],
+            },
+            min_input: todo!(),
+            max_input: todo!(),
+            mean_value: todo!(),
+            range: todo!(),
+            mean_output: todo!(),
+            range_output: todo!(),
+        };
+
+        let input = vector![1.5, 2.3];
+
+        let output = nnet.eval(input);
+
+        assert_eq!(output, vector![2.5, 3.0]);
+    }
+}
