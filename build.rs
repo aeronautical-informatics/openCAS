@@ -63,7 +63,7 @@ fn parse_nnet<P: AsRef<Path>>(nnet_file: P) -> (TokenStream, TokenStream) {
     let mut range: Vec<f32> = Vec::new();
 
     // parse header
-    // for the first run, just read the first 8 lines. Here, all the normalization and general information about the network is stored (see NNet doc).
+    // for the first run, just read the first 8 lines. Here, all the normalization and general information about the network is stored.
     for (line_no, line) in csv_reader.records().take(7).map(|e| e.unwrap()).enumerate() {
         // stupid humans count from one
         match line_no + 1 {
@@ -86,7 +86,8 @@ fn parse_nnet<P: AsRef<Path>>(nnet_file: P) -> (TokenStream, TokenStream) {
         }
     }
 
-    // parse data aka the rest of the file and store it within those vectors
+    // parse data aka the rest of the file and store it within vectors
+    // the numbers of rows per parse need o be monitred because they correlate with the length of the weights and biases
     let mut biases: Vec<Vec<f32>> = Vec::with_capacity(num_layer);
     let mut weights: Vec<Vec<Vec<f32>>> = Vec::with_capacity(num_layer);
 
@@ -116,7 +117,8 @@ fn parse_nnet<P: AsRef<Path>>(nnet_file: P) -> (TokenStream, TokenStream) {
                 result
             })
             .collect();
-
+        
+        // add the just parsed weights and biases to the storage vector
         layer += 1;
         weights.push(current_weights);
         biases.push(current_biases);
@@ -163,7 +165,7 @@ fn parse_nnet<P: AsRef<Path>>(nnet_file: P) -> (TokenStream, TokenStream) {
     )
 }
 
-/// This will read all nnet files within the `nnet` folder and generate a TokenStream that contains all the parsed information in  the NNet struct format.
+/// This will read all HCAS nnet files within the `nnet` folder and generate a TokenStream that contains all the parsed information in the NNet struct format.
 fn hcas_nnets() -> TokenStream {
     let pra_values = [0, 1, 2, 3, 4];
     let tau_values = [0, 5, 10, 15, 20, 30, 40, 60];
@@ -191,7 +193,7 @@ fn hcas_nnets() -> TokenStream {
     let tau_value_count = tau_values.len();
 
     quote!(
-        /// NNet structs of the Horizontal CAS
+        /// NNet structs of the HorizontalCAS
         pub const HCAS_NNETS: [ [ #nnet_type ; #tau_value_count ]; #pra_value_count ] =
             [ #(
                 [ #(
@@ -201,6 +203,7 @@ fn hcas_nnets() -> TokenStream {
     )
 }
 
+/// This will read all VCAS nnet files within the `nnet` folder and generate a TokenStream that contains all the parsed information in the NNet struct format.
 fn vcas_nnets() -> TokenStream {
     let pra_values = [1, 2, 3, 4, 5, 6, 7, 8, 9];
     let format_name = |pra| format!("VertCAS_pra{pra:02}_v4_45HU_200.nnet");
@@ -222,7 +225,7 @@ fn vcas_nnets() -> TokenStream {
     let pra_value_count = pra_values.len();
 
     quote!(
-        /// NNet structs of the Horizontal CAS
+        /// NNet structs of the VerticalCAS
         pub const VCAS_NNETS: [ #nnet_type ; #pra_value_count ] =
             [ #(
                 #parsed_nnets
@@ -234,6 +237,7 @@ fn main() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("nnets.rs");
 
+    //generate 
     let hcas_tree = hcas_nnets();
     let vcas_tree = vcas_nnets();
 

@@ -10,15 +10,18 @@ use uom::si::{
 
 use opencas::*;
 
+/// This code is used to benchmark the openCAS
 fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("hcas");
 
     let mut rng = rand::thread_rng();
 
+    // genrate random inputs for evaluation
     let range = Length::new::<foot>(rng.gen_range(0.0f32..56e3));
     let theta = Angle::new::<radian>(rng.gen_range(-10.0f32..10.0));
     let psi = Angle::new::<radian>(rng.gen_range(-10.0f32..10.0));
 
+    // iterate through all networks
     for pra in [
         HAdvisory::ClearOfConflict,
         HAdvisory::WeakLeft,

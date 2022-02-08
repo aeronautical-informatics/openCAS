@@ -12,6 +12,7 @@ pub type Vector<const ROWS: usize> = SVector<f32, ROWS>;
 /// + `N_OUTPUT` is the number of output variables
 ///
 /// The struct fields contain all information about the network.
+/// 
 /// + `input_layer` holds the weight matrix and bias vector for calculating the transitions
 ///    from the input neurons the the neurons of the first hidden layer.
 /// + `hidden_layers` hold all `N_MAT` matrices and vectors that are necessary for the transitions from
@@ -52,7 +53,7 @@ pub struct Layer<const INPUT_NEURONS: usize, const OUTPUT_NEURONS: usize> {
 impl<const N_INPUT: usize, const N_MAT: usize, const N_NEURON: usize, const N_OUTPUT: usize>
     NNet<N_INPUT, N_MAT, N_NEURON, N_OUTPUT>
 {
-    /// Evaluates a neuronal network with specific inputs
+    /// Evaluates a neuronal network with specific inputs:
     ///
     /// The inputs will be normalized (see `normalize()`) and then processed.
     /// This is basically a lot of linear algebra. It breaks down to
