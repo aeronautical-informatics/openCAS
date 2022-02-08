@@ -12,7 +12,7 @@ pub type Vector<const ROWS: usize> = SVector<f32, ROWS>;
 /// + `N_OUTPUT` is the number of output variables
 ///
 /// The struct fields contain all information about the network.
-/// 
+///
 /// + `input_layer` holds the weight matrix and bias vector for calculating the transitions
 ///    from the input neurons the the neurons of the first hidden layer.
 /// + `hidden_layers` hold all `N_MAT` matrices and vectors that are necessary for the transitions from

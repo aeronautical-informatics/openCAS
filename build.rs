@@ -117,7 +117,7 @@ fn parse_nnet<P: AsRef<Path>>(nnet_file: P) -> (TokenStream, TokenStream) {
                 result
             })
             .collect();
-        
+
         // add the just parsed weights and biases to the storage vector
         layer += 1;
         weights.push(current_weights);
@@ -237,7 +237,7 @@ fn main() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("nnets.rs");
 
-    //generate 
+    //generate
     let hcas_tree = hcas_nnets();
     let vcas_tree = vcas_nnets();
 
