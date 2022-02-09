@@ -63,17 +63,23 @@ impl<const N_INPUT: usize, const N_MAT: usize, const N_NEURON: usize, const N_OU
     pub fn eval(&self, mut inputs: Vector<N_INPUT>) -> Vector<N_OUTPUT> {
         self.normalize(&mut inputs);
 
+        //println!("Inputs after normalization: {:?}", &inputs);
+
         //Doing the actual network evaluation
         let mut accumulator =
             (self.input_layer.a * inputs + self.input_layer.biases).sup(&Vector::zeros());
+        //println!("After the input layer: {:?}", &accumulator);
 
         for layer in &self.hidden_layers {
             accumulator = (layer.a * accumulator + layer.biases).sup(&Vector::zeros());
+            //println!("Updates within the hidden layers: {:?}", &accumulator);
         }
 
         let mut output = self.output_layer.a * accumulator + self.output_layer.biases;
+        //println!("Just after output layer (not normalized): {:?}", &output);
 
         self.undo_normalize(&mut output);
+        //println!("Now undone normalize: {:?}", &output);
 
         output
     }
@@ -86,19 +92,20 @@ impl<const N_INPUT: usize, const N_MAT: usize, const N_NEURON: usize, const N_OU
     /// If they are within the range, the actual value will be use.
     /// Normalization will be done by subtracting the mean value and dividing the result by the value range.
     fn normalize(&self, inputs: &mut Vector<N_INPUT>) {
-        for (iter, element) in inputs.iter_mut().enumerate() {
-            match *element {
-                //TODO: can dis be ooptimized away?
-                x if x < self.min_input[iter] => {
-                    (self.min_input[iter] - self.mean_value[iter]) / self.range[iter]
+        for (index, element) in inputs.iter_mut().enumerate() {
+            *element = match *element {
+                //TODO: preprocess data so that only _ arm is left
+                x if x < self.min_input[index] => {
+                    (self.min_input[index] - self.mean_value[index]) / self.range[index]
                 }
-                x if x > self.max_input[iter] => {
-                    (self.max_input[iter] - self.mean_value[iter]) / self.range[iter]
+                x if x > self.max_input[index] => {
+                    (self.max_input[index] - self.mean_value[index]) / self.range[index]
                 }
-                _ => (*element - self.mean_value[iter]) / self.range[iter],
+                _ => (*element - self.mean_value[index]) / self.range[index],
             };
         }
     }
+
 
     /// Undo normalization on network outputs:
     ///
@@ -148,18 +155,19 @@ mod test {
                 ],
                 biases: vector![5.0, 3.0],
             },
-            min_input: todo!(),
-            max_input: todo!(),
-            mean_value: todo!(),
-            range: todo!(),
-            mean_output: todo!(),
-            range_output: todo!(),
+            min_input: vector![-2.0, -2.5],
+            max_input: vector![2.0, 2.5],
+            mean_value: vector![0.0, 0.0],
+            range: vector![4.0, 5.0],
+            mean_output: 1.5,
+            range_output: 5.0,
         };
 
-        let input = vector![1.5, 2.3];
+        // normlaization by hand mit [1.3, 2.3] und obigen Werten
+        let input = vector![1.3, 2.3];
 
         let output = nnet.eval(input);
 
-        assert_eq!(output, vector![2.5, 3.0]);
+        assert_eq!(output, vector![2345.525, 1355.6001]);
     }
 }
