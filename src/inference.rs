@@ -92,20 +92,11 @@ impl<const N_INPUT: usize, const N_MAT: usize, const N_NEURON: usize, const N_OU
     /// If they are within the range, the actual value will be use.
     /// Normalization will be done by subtracting the mean value and dividing the result by the value range.
     fn normalize(&self, inputs: &mut Vector<N_INPUT>) {
-        for (index, element) in inputs.iter_mut().enumerate() {
-            *element = match *element {
-                //TODO: preprocess data so that only _ arm is left
-                x if x < self.min_input[index] => {
-                    (self.min_input[index] - self.mean_value[index]) / self.range[index]
-                }
-                x if x > self.max_input[index] => {
-                    (self.max_input[index] - self.mean_value[index]) / self.range[index]
-                }
-                _ => (*element - self.mean_value[index]) / self.range[index],
-            };
-        }
+        *inputs = inputs
+            .sup(&self.min_input)
+            .inf(&self.max_input)
+            .map_with_location(|i, _, e| (e - self.mean_value[i]) / self.range[i]);
     }
-
 
     /// Undo normalization on network outputs:
     ///
