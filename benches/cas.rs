@@ -3,15 +3,15 @@ use rand::Rng;
 use std::time::Duration;
 use uom::si::{
     angle::radian,
-    f32::{Angle, Length, Time},
+    f32::{Angle, Length, Time, Velocity},
     length::foot,
-    time::second,
+    time::second, velocity::foot_per_minute,
 };
 
 use opencas::*;
 
-/// This code is used to benchmark the openCAS
-fn criterion_benchmark(c: &mut Criterion) {
+/// This code is used to benchmark HorizontalCAS
+fn criterion_benchmark_horizontal(c: &mut Criterion) {
     let mut group = c.benchmark_group("hcas");
 
     let mut rng = rand::thread_rng();
@@ -41,12 +41,48 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 }
 
+
+/// This code is used to benchmark VerticalCAS
+fn criterion_benchmark_vertical(c: &mut Criterion) {
+    let mut group = c.benchmark_group("vcas");
+
+    let mut rng = rand::thread_rng();
+
+    // genrate random inputs for evaluation
+    let height = Length::new::<foot>(rng.gen_range(-8e30f32..8e3));
+    let vert_speed_homeship = Velocity::new::<foot_per_minute>(rng.gen_range(-6e3f32..6e3));
+    let vert_speed_intruder = Velocity::new::<foot_per_minute>(rng.gen_range(-6e3f32..6e3));
+    let tau = Time::new::<second>(rng.gen_range(0f32..40.0));
+    
+    // iterate through all networks
+    for pra in [
+        VAdvisory::ClearOfConflict,
+        VAdvisory::DoNotClimb,
+        VAdvisory::DoNotDescend,
+        VAdvisory::Climb1500,
+        VAdvisory::Descend1500,
+        VAdvisory::StrengthenClimb1500,
+        VAdvisory::StrengthenDescend1500,
+        VAdvisory::StrengthenClimb2500,
+        VAdvisory::StrengthenDescend2500
+    ] {
+            let bench_name = format!("pra={pra:?}");
+            let mut cas = VCas { last_advisory: pra };
+
+            group.bench_function(&bench_name, |b| {
+                b.iter(|| cas.process(height, vert_speed_homeship, vert_speed_intruder, tau))
+            });
+        
+    }
+}
+
+/// run the benchmark on both CAS
 criterion_group! {
     name = benches;
     config = Criterion::default()
         .measurement_time(Duration::from_secs(1))
         .warm_up_time(Duration::from_secs(3));
-    targets = criterion_benchmark
+    targets = criterion_benchmark_horizontal, criterion_benchmark_vertical
 }
 
 criterion_main!(benches);
