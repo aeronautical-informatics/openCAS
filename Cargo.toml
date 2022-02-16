@@ -2,6 +2,7 @@
 
 members = [
     "opencas",
+    "advisory_viewer",
 ]
 
 [profile.release]
