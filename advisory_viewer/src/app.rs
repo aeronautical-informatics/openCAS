@@ -4,7 +4,7 @@ use eframe::{
     egui::{
         self,
         plot::{Line, Plot, Value, Values},
-        Color32,
+        Color32, DragValue,
     },
     epi,
 };
@@ -21,10 +21,16 @@ pub struct AdvisoryViewerConfig {
     pub output_variants: HashMap<String, Color32>,
 
     /// Key to `input_values`, describing which input value is to be used as x axis
-    pub x_value_key: String,
+    pub x_axis_key: String,
 
     /// Key to `input_values`, describing which input value is to be used as y axis
-    pub y_value_key: String,
+    pub y_axis_key: String,
+
+    /// Initial resolution of the grid
+    pub initial_grid_stride: f32,
+
+    /// Maximum levels of the Quadtree
+    pub max_levels: usize,
 }
 
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
@@ -46,7 +52,26 @@ impl Default for TemplateApp {
     fn default() -> Self {
         Self {
             av: AdvisoryViewer {
-                conf: Default::default(),
+                conf: AdvisoryViewerConfig {
+                    input_values: ["Previous Adv", "τ", "range", "θ", "ψ"]
+                        .into_iter()
+                        .map(|e| (e.to_string(), 0.0))
+                        .collect(),
+                    output_variants: [
+                        ("CoC", Color32::LIGHT_GRAY),
+                        ("WL", Color32::LIGHT_RED),
+                        ("WR", Color32::LIGHT_GREEN),
+                        ("SL", Color32::RED),
+                        ("SR", Color32::GREEN),
+                    ]
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v))
+                    .collect(),
+                    x_axis_key: "θ".into(),
+                    y_axis_key: "ψ".into(),
+                    initial_grid_stride: 1.0,
+                    max_levels: 32,
+                },
             },
         }
     }
@@ -85,11 +110,64 @@ impl epi::App for TemplateApp {
         let AdvisoryViewer { ref mut conf, .. } = self.av;
 
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
-            ui.heading("Side Panel");
+            ui.heading("Settings");
+
+            egui::Grid::new("my_grid")
+                .num_columns(2)
+                .spacing([40.0, 4.0])
+                .striped(true)
+                .show(ui, |ui| {
+                    ui.label("Initial Grid stride");
+                    ui.add(
+                        egui::Slider::new(&mut conf.initial_grid_stride, 0.1..=10e3)
+                            .logarithmic(true),
+                    );
+                    ui.end_row();
+
+                    ui.label("Maximum Detail Level");
+                    ui.add(DragValue::new(&mut conf.max_levels).clamp_range(1..=32));
+                    ui.end_row();
+
+                    ui.label("X-Axis Selector");
+                    egui::ComboBox::from_id_source("x_axis_combo")
+                        .selected_text(&conf.x_axis_key)
+                        .show_ui(ui, |ui| {
+                            for value in conf.input_values.keys() {
+                                if value == &conf.y_axis_key {
+                                    continue;
+                                }
+
+                                ui.selectable_value(&mut conf.x_axis_key, value.to_string(), value);
+                            }
+                        });
+                    ui.end_row();
+
+                    ui.label("Y-Axis Selector");
+                    egui::ComboBox::from_id_source("y_axis_combo")
+                        .selected_text(&conf.y_axis_key)
+                        .show_ui(ui, |ui| {
+                            for value in conf.input_values.keys() {
+                                if value == &conf.x_axis_key {
+                                    continue;
+                                }
+                                ui.selectable_value(&mut conf.y_axis_key, value.to_string(), value);
+                            }
+                        });
+                    ui.end_row();
+
+                    for (k, v) in &mut conf.input_values {
+                        if k == &conf.x_axis_key || k == &conf.y_axis_key {
+                            continue;
+                        }
+                        ui.label(k);
+                        ui.add(DragValue::new(v));
+                        ui.end_row();
+                    }
+                });
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            let sin = (0..1000).map(|i| {
+            let sin = (0..100).map(|i| {
                 let x = i as f64 * 0.01;
                 Value::new(x, x.sin())
             });
