@@ -16,9 +16,13 @@ mod visualize;
 pub struct AdvisoryViewerConfig {
     /// contains all input values
     pub input_values: HashMap<String, f32>,
+
     /// the output value -> Color mapping
     /// For the example of the H-CAS, this is fife: CoC, WL, WR, SL, SR
-    pub output_variants: HashMap<String, Color32>,
+    pub output_variants: HashMap<u8, (String, Color32)>,
+
+    /// The previous output
+    pub previous_output: u8,
 
     /// Key to `input_values`, describing which input value is to be used as x axis
     pub x_axis_key: String,
@@ -53,7 +57,8 @@ impl Default for TemplateApp {
         Self {
             av: AdvisoryViewer {
                 conf: AdvisoryViewerConfig {
-                    input_values: ["Previous Adv", "τ", "range", "θ", "ψ"]
+                    previous_output: 0,
+                    input_values: ["τ", "range", "θ", "ψ"]
                         .into_iter()
                         .map(|e| (e.to_string(), 0.0))
                         .collect(),
@@ -65,7 +70,8 @@ impl Default for TemplateApp {
                         ("SR", Color32::GREEN),
                     ]
                     .into_iter()
-                    .map(|(k, v)| (k.to_string(), v))
+                    .enumerate()
+                    .map(|(i, (k, v))| (i.try_into().unwrap(), (k.to_string(), v)))
                     .collect(),
                     x_axis_key: "θ".into(),
                     y_axis_key: "ψ".into(),

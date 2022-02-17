@@ -2,7 +2,7 @@ use std::ops::RangeBounds;
 
 use eframe::egui::plot::Points;
 
-use super::AdvisoryViewer;
+use super::{AdvisoryViewer, AdvisoryViewerConfig};
 
 pub trait Visualizable {
     /// Returns a `Vec` of `Points`.
@@ -19,7 +19,11 @@ pub trait Visualizable {
     ///   level of the quadtree
     /// + `x_range`: Range of x-values to be calculated
     /// + `y_range`: Range of y-values to be calculated
-    fn get_points<F: FnMut(Vec<f32>) -> u8, X: RangeBounds<f32>, Y: RangeBounds<f32>>(
+    fn get_points<
+        F: FnMut(f32, f32, &AdvisoryViewerConfig) -> u8,
+        X: RangeBounds<f32>,
+        Y: RangeBounds<f32>,
+    >(
         &mut self,
         f: F,
         intial_grid_stride: f32,
@@ -29,7 +33,11 @@ pub trait Visualizable {
 }
 
 impl Visualizable for AdvisoryViewer {
-    fn get_points<F: FnMut(Vec<f32>) -> u8, X: RangeBounds<f32>, Y: RangeBounds<f32>>(
+    fn get_points<
+        F: FnMut(f32, f32, &AdvisoryViewerConfig) -> u8,
+        X: RangeBounds<f32>,
+        Y: RangeBounds<f32>,
+    >(
         &mut self,
         f: F,
         intial_grid_stride: f32,
