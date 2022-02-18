@@ -5,7 +5,8 @@ use uom::si::{
     angle::radian,
     f32::{Angle, Length, Time, Velocity},
     length::foot,
-    time::second, velocity::foot_per_minute,
+    time::second,
+    velocity::foot_per_minute,
 };
 
 use opencas::*;
@@ -41,7 +42,6 @@ fn criterion_benchmark_horizontal(c: &mut Criterion) {
     }
 }
 
-
 /// This code is used to benchmark VerticalCAS
 fn criterion_benchmark_vertical(c: &mut Criterion) {
     let mut group = c.benchmark_group("vcas");
@@ -53,7 +53,7 @@ fn criterion_benchmark_vertical(c: &mut Criterion) {
     let vert_speed_homeship = Velocity::new::<foot_per_minute>(rng.gen_range(-6e3f32..6e3));
     let vert_speed_intruder = Velocity::new::<foot_per_minute>(rng.gen_range(-6e3f32..6e3));
     let tau = Time::new::<second>(rng.gen_range(0f32..40.0));
-    
+
     // iterate through all networks
     for pra in [
         VAdvisory::ClearOfConflict,
@@ -64,15 +64,14 @@ fn criterion_benchmark_vertical(c: &mut Criterion) {
         VAdvisory::StrengthenClimb1500,
         VAdvisory::StrengthenDescend1500,
         VAdvisory::StrengthenClimb2500,
-        VAdvisory::StrengthenDescend2500
+        VAdvisory::StrengthenDescend2500,
     ] {
-            let bench_name = format!("pra={pra:?}");
-            let mut cas = VCas { last_advisory: pra };
+        let bench_name = format!("pra={pra:?}");
+        let mut cas = VCas { last_advisory: pra };
 
-            group.bench_function(&bench_name, |b| {
-                b.iter(|| cas.process(height, vert_speed_homeship, vert_speed_intruder, tau))
-            });
-        
+        group.bench_function(&bench_name, |b| {
+            b.iter(|| cas.process(height, vert_speed_homeship, vert_speed_intruder, tau))
+        });
     }
 }
 

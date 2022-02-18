@@ -6,6 +6,8 @@
 //! Python and Julia is not sufficient.
 #![cfg_attr(not(test), no_std)]
 
+use core::convert::TryFrom;
+
 use inference::Vector;
 
 #[allow(unused_imports)]
@@ -55,6 +57,21 @@ pub enum HAdvisory {
     StrongRight = 4,
 }
 
+impl TryFrom<u8> for HAdvisory {
+    type Error = ();
+
+    fn try_from(v: u8) -> Result<Self, Self::Error> {
+        Ok(match v {
+            0 => Self::ClearOfConflict,
+            1 => Self::WeakLeft,
+            2 => Self::WeakRight,
+            3 => Self::StrongLeft,
+            4 => Self::StrongRight,
+            _ => return Err(()),
+        })
+    }
+}
+
 impl HCas {
     /// HorizontalCAS consists of 40 different neural networks (smaller network = les runtime). The
     /// splitting parameters are:
@@ -69,18 +86,33 @@ impl HCas {
     /// + `theta`[rad]: angle from homeships heading to intruder in the mathematical sense
     ///   (counterclockwise)
     /// + `psi` [rad]:  angle of intruder relative to flight direction of the homeship
-    ///   (mathematical sense => counterclockwise)  
+    ///   (mathematical sense => counterclockwise)
     ///
     /// Example:
     ///
     /// `theta` = 5° => intruder is slidely on the left of the homeships heading.
     /// `psi` = 90° / pi/2 => intruder is flying to the left perpendicular to the homeships
     /// heading. See [figure 3](https://arxiv.org/pdf/1912.07084.pdf).
-    pub fn process(
+    pub fn process_polar(
         &mut self,
         tau: Time,
         range: Length,
         theta: Angle,
+        psi: Angle,
+    ) -> (HAdvisory, f32) {
+        self.process_cartesian(
+            tau,
+            range * (theta.get::<radian>().cos()),
+            range * (theta.get::<radian>().sin()),
+            psi,
+        )
+    }
+
+    pub fn process_cartesian(
+        &mut self,
+        tau: Time,
+        forward_range: Length,
+        left_range: Length,
         psi: Angle,
     ) -> (HAdvisory, f32) {
         // match the value of tau to the corresponding tau trained networks
@@ -100,8 +132,8 @@ impl HCas {
 
         // generate the network inputs as a vector [x,y,psi]
         let inputs: Vector<3> = nalgebra::vector![
-            range.get::<foot>() * theta.get::<radian>().cos(),
-            range.get::<foot>() * theta.get::<radian>().sin(),
+            forward_range.get::<foot>(),
+            left_range.get::<foot>(),
             psi.get::<radian>()
         ];
 
@@ -112,15 +144,8 @@ impl HCas {
         let priority = evaluated.max();
 
         // find the index of said highest value and map the index to the possible advisories
-        self.last_advisory = match evaluated.imax() {
-            0 => HAdvisory::ClearOfConflict,
-            1 => HAdvisory::WeakLeft,
-            2 => HAdvisory::WeakRight,
-            3 => HAdvisory::StrongLeft,
-            4 => HAdvisory::StrongRight,
-            _ => todo!(),
-        };
-
+        // the unwrap will never actually panic
+        self.last_advisory = (evaluated.imax() as u8).try_into().unwrap();
         (self.last_advisory, priority)
     }
 }
@@ -147,6 +172,25 @@ pub enum VAdvisory {
     StrengthenClimb1500 = 6,
     StrengthenDescend2500 = 7,
     StrengthenClimb2500 = 8,
+}
+
+impl TryFrom<u8> for VAdvisory {
+    type Error = ();
+
+    fn try_from(v: u8) -> Result<Self, Self::Error> {
+        Ok(match v {
+            0 => Self::ClearOfConflict,
+            1 => Self::DoNotClimb,
+            2 => Self::DoNotDescend,
+            3 => Self::Climb1500,
+            4 => Self::Descend1500,
+            5 => Self::StrengthenClimb1500,
+            6 => Self::StrengthenDescend1500,
+            7 => Self::StrengthenClimb2500,
+            8 => Self::StrengthenDescend2500,
+            _ => return Err(()),
+        })
+    }
 }
 
 impl VCas {
@@ -182,19 +226,8 @@ impl VCas {
         let priority = evaluated.max();
 
         // find index of said highest value and map to the possible advisories
-        self.last_advisory = match evaluated.imax() {
-            0 => VAdvisory::ClearOfConflict,
-            1 => VAdvisory::DoNotClimb,
-            2 => VAdvisory::DoNotDescend,
-            3 => VAdvisory::Climb1500,
-            4 => VAdvisory::Descend1500,
-            5 => VAdvisory::StrengthenClimb1500,
-            6 => VAdvisory::StrengthenDescend1500,
-            7 => VAdvisory::StrengthenClimb2500,
-            8 => VAdvisory::StrengthenDescend2500,
-            _ => todo!(),
-        };
-
+        // the unwrap will never actually panic
+        self.last_advisory = (evaluated.imax() as u8).try_into().unwrap();
         (self.last_advisory, priority)
     }
 }
