@@ -203,40 +203,35 @@ impl epi::App for TemplateApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             let points = match viewer_key.as_str() {
-                "HCAS" => {
-                    current_viewer.get_points(
-                        |x, y, c| {
-                            let mut config = c.clone();
-                            let mut cas = opencas::HCas {
-                                last_advisory: config.previous_output.try_into().unwrap(),
-                            };
+                "HCAS" => current_viewer.get_points(
+                    |x, y, c| {
+                        let mut config = c.clone();
+                        let mut cas = opencas::HCas {
+                            last_advisory: config.previous_output.try_into().unwrap(),
+                        };
 
-                            *config.input_values.get_mut(&config.x_axis_key).unwrap() = x;
-                            *config.input_values.get_mut(&config.x_axis_key).unwrap() = y;
+                        *config.input_values.get_mut(&config.x_axis_key).unwrap() = x;
+                        *config.input_values.get_mut(&config.x_axis_key).unwrap() = y;
 
-                            let tau = Time::new::<second>(*config.input_values.get("τ").unwrap());
-                            let forward =
-                                Length::new::<foot>(*config.input_values.get("forward").unwrap());
-                            let left =
-                                Length::new::<foot>(*config.input_values.get("left").unwrap());
-                            let psi = Angle::new::<radian>(*config.input_values.get("ψ").unwrap());
-                            cas.process_cartesian(tau, forward, left, psi).0 as u8
-                        },
-                        current_viewer.conf.initial_grid_stride,
-                        0.0..=56e3,
-                        -23e3..=23e3,
-                    );
+                        let tau = Time::new::<second>(*config.input_values.get("τ").unwrap());
+                        let forward =
+                            Length::new::<foot>(*config.input_values.get("forward").unwrap());
+                        let left = Length::new::<foot>(*config.input_values.get("left").unwrap());
+                        let psi = Angle::new::<radian>(*config.input_values.get("ψ").unwrap());
+                        cas.process_cartesian(tau, forward, left, psi).0 as u8
+                    },
+                    0.0..=56e3,
+                    -23e3..=23e3,
+                ),
+                _ => {
+                    todo!()
                 }
-                _ => {}
             };
-            let sin = (0..100).map(|i| {
-                let x = i as f64 * 0.01;
-                Value::new(x, x.sin())
+            Plot::new("my_plot").data_aspect(1.0).show(ui, |plot_ui| {
+                for p in points.into_iter() {
+                    plot_ui.points(p)
+                }
             });
-            let line = Line::new(Values::from_values_iter(sin));
-            Plot::new("my_plot")
-                .data_aspect(1.0)
-                .show(ui, |plot_ui| plot_ui.line(line));
         });
     }
 }

@@ -26,7 +26,6 @@ pub trait Visualizable {
     >(
         &mut self,
         f: F,
-        intial_grid_stride: f32,
         x_range: X,
         y_range: Y,
     ) -> Vec<Points>;
@@ -40,7 +39,6 @@ impl Visualizable for AdvisoryViewer {
     >(
         &mut self,
         f: F,
-        intial_grid_stride: f32,
         x_range: X,
         y_range: Y,
     ) -> Vec<Points> {
