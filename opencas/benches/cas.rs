@@ -36,7 +36,7 @@ fn criterion_benchmark_horizontal(c: &mut Criterion) {
             let mut cas = HCas { last_advisory: pra };
 
             group.bench_function(&bench_name, |b| {
-                b.iter(|| cas.process(tau, range, theta, psi))
+                b.iter(|| cas.process_polar(tau, range, theta, psi))
             });
         }
     }
@@ -75,7 +75,7 @@ fn criterion_benchmark_vertical(c: &mut Criterion) {
     }
 }
 
-/// run the benchmark on both CAS
+// run the benchmark on both CAS
 criterion_group! {
     name = benches;
     config = Criterion::default()
