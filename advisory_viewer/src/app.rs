@@ -2,7 +2,7 @@ use arc_swap::ArcSwap;
 use atomic_counter::{AtomicCounter, RelaxedCounter};
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::ops::Bound;
+use std::ops::{Bound, RangeInclusive};
 use std::sync::{Arc, RwLock};
 
 use eframe::egui::plot::{MarkerShape, Points, Polygon};
@@ -24,6 +24,177 @@ use crate::app::visualize::VisualizerNode;
 use visualize::Visualizable;
 
 mod visualize;
+
+use strum::EnumMessage;
+use strum::IntoEnumIterator;
+
+pub struct HCasCartesianGui {
+    x_axis_key: HCasInput,
+    y_axis_key: HCasInput,
+    input_ranges: HashMap<HCasInput, RangeInclusive<f32>>,
+    inputs: HashMap<HCasInput, f32>,
+}
+
+#[derive(
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    strum::EnumString,
+    strum::EnumIter,
+    strum::Display,
+    strum::AsRefStr,
+    strum::EnumMessage,
+)]
+pub enum HCasInput {
+    /// estimated time to impact
+    #[strum(message = "s", detailed_message = "τ")]
+    Tau,
+
+    /// forward looking distance to intruder plane
+    #[strum(message = "ft", detailed_message = "longitidunal dist")]
+    X,
+
+    /// left looking distance to intruder plane
+    #[strum(message = "ft", detailed_message = "lateral dist")]
+    Y,
+
+    /// own bearing
+    #[strum(message = "rad", detailed_message = "ψ")]
+    OwnBearing,
+
+    /// intruder bearing
+    #[strum(message = "rad", detailed_message = "θ")]
+    IntruderBearing,
+}
+
+impl Default for HCasCartesianGui {
+    fn default() -> Self {
+        let angle_range = -std::f32::consts::PI..=std::f32::consts::PI;
+        let new_self = Self {
+            x_axis_key: HCasInput::X,
+            y_axis_key: HCasInput::Y,
+            input_ranges: [
+                (HCasInput::Tau, 0.0..=60.0),
+                (HCasInput::X, 0.0..=56e3),
+                (HCasInput::Y, -56e3..=56e3),
+                (HCasInput::OwnBearing, angle_range.clone()),
+                (HCasInput::IntruderBearing, angle_range.clone()),
+            ]
+            .into_iter()
+            .collect(),
+            inputs: [
+                (HCasInput::Tau, 15.0),
+                (HCasInput::X, 0.0),
+                (HCasInput::Y, 0.0),
+                (HCasInput::OwnBearing, 0.0),
+                (HCasInput::IntruderBearing, 330.0),
+            ]
+            .into_iter()
+            .collect(),
+        };
+
+        assert_eq!(HCasInput::iter().len(), new_self.input_ranges.len());
+        assert_eq!(HCasInput::iter().len(), new_self.inputs.len());
+
+        new_self
+    }
+}
+
+impl HCasCartesianGui {
+    pub fn draw_config(&mut self, ui: &mut egui::Ui) {
+        egui::Grid::new("hcas_gui_settings_grid")
+            .num_columns(2)
+            .spacing([40.0, 4.0])
+            .striped(true)
+            .show(ui, |ui| {
+                ui.label("X-Axis Selector");
+                egui::ComboBox::from_id_source("x_axis_combo")
+                    .selected_text(self.x_axis_key.as_ref())
+                    .show_ui(ui, |ui| {
+                        for value in HCasInput::iter() {
+                            ui.selectable_value(&mut self.x_axis_key, value, value.as_ref());
+                        }
+                    });
+                ui.end_row();
+
+                ui.label("Y-Axis Selector");
+                egui::ComboBox::from_id_source("y_axis_combo")
+                    .selected_text(self.y_axis_key.as_ref())
+                    .show_ui(ui, |ui| {
+                        for value in HCasInput::iter() {
+                            ui.selectable_value(&mut self.y_axis_key, value, value.as_ref());
+                        }
+                    });
+                ui.end_row();
+
+                // add inputs for the actual input values
+                for (k, v) in &mut self.inputs {
+                    let unit = &format!(" {}", k.get_message().unwrap());
+                    let name = k.get_detailed_message().unwrap();
+                    let tooltip = k.get_documentation().unwrap();
+
+                    let value_range = self.input_ranges.get(k).unwrap();
+                    let suffix = if *k == self.x_axis_key || *k == self.y_axis_key {
+                        "[inactive]"
+                    } else {
+                        ""
+                    };
+                    ui.label(format!("{name} {suffix}")).on_hover_text(tooltip);
+                    ui.add(
+                        egui::Slider::new(v, value_range.clone())
+                            .suffix(unit)
+                            .show_value(true),
+                    );
+                    ui.end_row();
+                }
+
+                ui.separator();
+                ui.end_row();
+
+                // add inputs for the input ranges
+                for (k, v) in &mut self.input_ranges {
+                    let unit = &format!(" {}", k.get_message().unwrap());
+                    let name = k.get_detailed_message().unwrap();
+                    let _tooltip = k.get_documentation().unwrap();
+
+                    let (mut min, mut max) = v.clone().into_inner();
+                    let drag_value_speed = 1e-2;
+
+                    ui.label(format!("{name} range"));
+
+                    let drag_value_size = (
+                        ui.available_width() / 2.0 - ui.spacing().button_padding.x,
+                        ui.spacing().interact_size.y,
+                    );
+                    // TODO the following is an ugly hack to get left and right aligned elements in
+                    // the same row.
+                    ui.horizontal_wrapped(|ui| {
+                        ui.add_sized(
+                            drag_value_size,
+                            egui::DragValue::new(&mut min)
+                                .suffix(unit)
+                                .clamp_range(f32::MIN..=max)
+                                .speed(drag_value_speed),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(), |ui| {
+                            ui.add_sized(
+                                drag_value_size,
+                                egui::DragValue::new(&mut max)
+                                    .suffix(unit)
+                                    .clamp_range(min..=f32::MAX)
+                                    .speed(drag_value_speed),
+                            );
+                        });
+                    });
+                    ui.end_row();
+                    *v = min..=max;
+                }
+            });
+    }
+}
 
 #[derive(Debug, Default, Clone, PartialEq)]
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
@@ -73,6 +244,7 @@ pub struct AdvisoryViewer {
 pub struct TemplateApp {
     viewers: HashMap<String, AdvisoryViewer>,
     viewer_key: String,
+    hcas_gui: HCasCartesianGui,
 }
 
 impl Default for TemplateApp {
@@ -85,15 +257,13 @@ impl Default for TemplateApp {
                     .map(|e| (e.to_string(), 0.0))
                     .collect(),
                 output_variants: [
-                    ("CoC", Color32::LIGHT_GRAY),
-                    ("WL", Color32::LIGHT_RED),
-                    ("WR", Color32::LIGHT_GREEN),
-                    ("SL", Color32::RED),
-                    ("SR", Color32::GREEN),
+                    (1, "WL", Color32::LIGHT_RED),
+                    (2, "WR", Color32::LIGHT_GREEN),
+                    (3, "SL", Color32::RED),
+                    (4, "SR", Color32::GREEN),
                 ]
                 .into_iter()
-                .enumerate()
-                .map(|(i, (k, v))| (i.try_into().unwrap(), (k.to_string(), v)))
+                .map(|(i, k, v)| (i.try_into().unwrap(), (k.to_string(), v)))
                 .collect(),
                 x_axis_key: "θ".into(),
                 y_axis_key: "ψ".into(),
@@ -109,6 +279,7 @@ impl Default for TemplateApp {
         Self {
             viewers: [("HCAS".into(), hcas_av)].into_iter().collect(),
             viewer_key: "HCAS".into(),
+            hcas_gui: Default::default(),
         }
     }
 }
@@ -146,6 +317,7 @@ impl epi::App for TemplateApp {
         let Self {
             ref mut viewers,
             ref mut viewer_key,
+            ref mut hcas_gui,
         } = self;
 
         let av_keys: Vec<_> = viewers.keys().cloned().collect();
@@ -155,79 +327,82 @@ impl epi::App for TemplateApp {
             let AdvisoryViewer { ref mut conf, .. } = current_viewer;
             ui.heading("Settings");
 
-            egui::Grid::new("my_grid")
-                .num_columns(2)
-                .spacing([40.0, 4.0])
-                .striped(true)
-                .show(ui, |ui| {
-                    ui.label("AdvisoryViewer");
-                    egui::ComboBox::from_id_source("viewer_combo")
-                        .selected_text(viewer_key.as_str())
-                        .show_ui(ui, |ui| {
-                            for value in av_keys {
-                                ui.selectable_value(viewer_key, value.clone(), value);
-                            }
-                        });
-
-                    ui.end_row();
-
-                    ui.label("Minimal Detail Level");
-                    ui.add(egui::Slider::new(&mut conf.min_levels, 0..=25).logarithmic(true));
-                    ui.end_row();
-
-                    ui.label("Maximum Detail Level");
-                    ui.add(DragValue::new(&mut conf.max_levels).clamp_range(1..=32));
-                    ui.end_row();
-
-                    ui.label("X-Axis Selector");
-                    egui::ComboBox::from_id_source("x_axis_combo")
-                        .selected_text(conf.x_axis_key.as_str())
-                        .show_ui(ui, |ui| {
-                            for value in conf.input_values.keys() {
-                                if value == &conf.y_axis_key {
-                                    continue;
+            /*
+                egui::Grid::new("my_grid")
+                    .num_columns(2)
+                    .spacing([40.0, 4.0])
+                    .striped(true)
+                    .show(ui, |ui| {
+                        ui.label("AdvisoryViewer");
+                        egui::ComboBox::from_id_source("viewer_combo")
+                            .selected_text(viewer_key.as_str())
+                            .show_ui(ui, |ui| {
+                                for value in av_keys {
+                                    ui.selectable_value(viewer_key, value.clone(), value);
                                 }
+                            });
 
-                                ui.selectable_value(&mut conf.x_axis_key, value.to_string(), value);
-                            }
-                        });
-                    ui.end_row();
-
-                    ui.label("Y-Axis Selector");
-                    egui::ComboBox::from_id_source("y_axis_combo")
-                        .selected_text(conf.y_axis_key.as_str())
-                        .show_ui(ui, |ui| {
-                            for value in conf.input_values.keys() {
-                                if value == &conf.x_axis_key {
-                                    continue;
-                                }
-                                ui.selectable_value(&mut conf.y_axis_key, value.to_string(), value);
-                            }
-                        });
-                    ui.end_row();
-
-                    for (k, v) in &mut conf.input_values {
-                        if k == &conf.x_axis_key || k == &conf.y_axis_key {
-                            continue;
-                        }
-                        ui.label(k);
-                        ui.add(DragValue::new(v));
                         ui.end_row();
-                    }
-                    let quads = 4usize.pow(conf.min_levels as u32);
-                    let current_quads = current_viewer.min_level_counter.get();
 
-                    ui.label("Initial Quads:");
-                    ui.add(
-                        egui::widgets::ProgressBar::new(current_quads as f32 / quads as f32)
-                            .text(format!("{}/{}", current_quads, quads)),
-                    );
-                    ui.end_row();
+                        ui.label("Minimal Detail Level");
+                        ui.add(egui::Slider::new(&mut conf.min_levels, 0..=25).logarithmic(true));
+                        ui.end_row();
 
-                    ui.label("Extra Quads:");
-                    ui.label(current_viewer.additional_quad_counter.get().to_string());
-                    ui.end_row();
-                });
+                        ui.label("Maximum Detail Level");
+                        ui.add(DragValue::new(&mut conf.max_levels).clamp_range(1..=32));
+                        ui.end_row();
+
+                        ui.label("X-Axis Selector");
+                        egui::ComboBox::from_id_source("x_axis_combo")
+                            .selected_text(conf.x_axis_key.as_str())
+                            .show_ui(ui, |ui| {
+                                for value in conf.input_values.keys() {
+                                    if value == &conf.y_axis_key {
+                                        continue;
+                                    }
+
+                                    ui.selectable_value(&mut conf.x_axis_key, value.to_string(), value);
+                                }
+                            });
+                        ui.end_row();
+
+                        ui.label("Y-Axis Selector");
+                        egui::ComboBox::from_id_source("y_axis_combo")
+                            .selected_text(conf.y_axis_key.as_str())
+                            .show_ui(ui, |ui| {
+                                for value in conf.input_values.keys() {
+                                    if value == &conf.x_axis_key {
+                                        continue;
+                                    }
+                                    ui.selectable_value(&mut conf.y_axis_key, value.to_string(), value);
+                                }
+                            });
+                        ui.end_row();
+
+                        for (k, v) in &mut conf.input_values {
+                            if k == &conf.x_axis_key || k == &conf.y_axis_key {
+                                continue;
+                            }
+                            ui.label(k);
+                            ui.add(DragValue::new(v));
+                            ui.end_row();
+                        }
+                        let quads = 4usize.pow(conf.min_levels as u32);
+                        let current_quads = current_viewer.min_level_counter.get();
+
+                        ui.label("Initial Quads:");
+                        ui.add(
+                            egui::widgets::ProgressBar::new(current_quads as f32 / quads as f32)
+                                .text(format!("{}/{}", current_quads, quads)),
+                        );
+                        ui.end_row();
+
+                        ui.label("Extra Quads:");
+                        ui.label(current_viewer.additional_quad_counter.get().to_string());
+                        ui.end_row();
+                    });
+            */
+            hcas_gui.draw_config(ui);
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {

@@ -18,6 +18,7 @@ arc-swap = "1.5" #For atomic double buffers
 #kd-tree = "0.4" #KD Tree implementation for dynamic image calculation
 atomic-counter = "1.0" #Track progress of image generator
 ordered-float = "2.10"
+strum = { version = "0", features = [ "derive" ] }
 
 serde = { version = "1", features = ["derive"], optional = true }
 
