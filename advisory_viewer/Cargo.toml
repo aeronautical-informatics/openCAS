@@ -10,9 +10,14 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-eframe = "0.16.0" # Gives us egui, epi and web+native backends
+eframe = "0.17.0" # Gives us egui, epi and web+native backends
 opencas = { path = "../opencas" }
 uom = "*"
+rayon = "1.5" #Gives easy to use parallelized iterators
+arc-swap = "1.5" #For atomic double buffers
+#kd-tree = "0.4" #KD Tree implementation for dynamic image calculation
+atomic-counter = "1.0" #Track progress of image generator
+ordered-float = "2.10"
 
 serde = { version = "1", features = ["derive"], optional = true }
 

@@ -1,4 +1,8 @@
 use std::collections::HashMap;
+use std::hash::Hash;
+use std::ops::Bound;
+use std::sync::Arc;
+use arc_swap::ArcSwap;
 
 use eframe::{
     egui::{
@@ -8,6 +12,7 @@ use eframe::{
     },
     epi,
 };
+use eframe::egui::plot::{MarkerShape, Points, Polygon};
 
 use uom::si::angle::radian;
 use uom::si::f32::*;
@@ -15,6 +20,7 @@ use uom::si::length::foot;
 use uom::si::time::second;
 
 use visualize::Visualizable;
+use crate::app::visualize::VisualizerNode;
 
 mod visualize;
 
@@ -38,7 +44,7 @@ pub struct AdvisoryViewerConfig {
     pub y_axis_key: String,
 
     /// Initial resolution of the grid
-    pub initial_grid_stride: f32,
+    pub min_levels: usize,
 
     /// Maximum levels of the Quadtree
     pub max_levels: usize,
@@ -47,9 +53,13 @@ pub struct AdvisoryViewerConfig {
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
 pub struct AdvisoryViewer {
     pub conf: AdvisoryViewerConfig,
-    // TODO Inser whatever you need to cache the quadtree
+    // TODO Insert whatever you need to cache the quadtree
     // Remember to annotate it with
     // #[cfg_attr(feature = "persistence", serde(skip))]
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    visualizer_tree: Arc<ArcSwap<VisualizerNode>>,
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    config_hash: Arc<ArcSwap<u64>>,
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -65,7 +75,7 @@ impl Default for TemplateApp {
         let hcas_av = AdvisoryViewer {
             conf: AdvisoryViewerConfig {
                 previous_output: 0,
-                input_values: ["τ", "forward", "left", "ψ"]
+                input_values: ["τ", "forward", "left", "ψ", "θ"]
                     .into_iter()
                     .map(|e| (e.to_string(), 0.0))
                     .collect(),
@@ -82,9 +92,11 @@ impl Default for TemplateApp {
                 .collect(),
                 x_axis_key: "θ".into(),
                 y_axis_key: "ψ".into(),
-                initial_grid_stride: 1.0,
+                min_levels: 8,
                 max_levels: 32,
             },
+            visualizer_tree: Arc::new(ArcSwap::new(Arc::new(VisualizerNode::default()))),
+            config_hash: Default::default()
         };
 
         Self {
@@ -102,7 +114,7 @@ impl epi::App for TemplateApp {
     /// Called once before the first frame.
     fn setup(
         &mut self,
-        _ctx: &egui::CtxRef,
+        _ctx: &egui::Context,
         _frame: &epi::Frame,
         _storage: Option<&dyn epi::Storage>,
     ) {
@@ -123,7 +135,7 @@ impl epi::App for TemplateApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
-    fn update(&mut self, ctx: &egui::CtxRef, frame: &epi::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
         let Self {
             ref mut viewers,
             ref mut viewer_key,
@@ -154,7 +166,7 @@ impl epi::App for TemplateApp {
 
                     ui.label("Initial Grid stride");
                     ui.add(
-                        egui::Slider::new(&mut conf.initial_grid_stride, 0.1..=10e3)
+                        egui::Slider::new(&mut conf.min_levels, 0..=25)
                             .logarithmic(true),
                     );
                     ui.end_row();
@@ -202,7 +214,7 @@ impl epi::App for TemplateApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            let points = match viewer_key.as_str() {
+            let polygons = match viewer_key.as_str() {
                 "HCAS" => current_viewer.get_points(
                     |x, y, c| {
                         let mut config = c.clone();
@@ -211,7 +223,7 @@ impl epi::App for TemplateApp {
                         };
 
                         *config.input_values.get_mut(&config.x_axis_key).unwrap() = x;
-                        *config.input_values.get_mut(&config.x_axis_key).unwrap() = y;
+                        *config.input_values.get_mut(&config.y_axis_key).unwrap() = y;
 
                         let tau = Time::new::<second>(*config.input_values.get("τ").unwrap());
                         let forward =
@@ -224,12 +236,12 @@ impl epi::App for TemplateApp {
                     -23e3..=23e3,
                 ),
                 _ => {
-                    todo!()
+                    vec![]
                 }
             };
             Plot::new("my_plot").data_aspect(1.0).show(ui, |plot_ui| {
-                for p in points.into_iter() {
-                    plot_ui.points(p)
+                for p in polygons.into_iter() {
+                    plot_ui.polygon(p);
                 }
             });
         });
