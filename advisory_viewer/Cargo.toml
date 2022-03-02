@@ -11,6 +11,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 eframe = "0.17.0" # Gives us egui, epi and web+native backends
+#egui = { version = "0.17.0", features = [ "multi_threaded" ] }# Gives us egui, epi and web+native backends
 opencas = { path = "../opencas" }
 uom = "*"
 rayon = "1.5" #Gives easy to use parallelized iterators

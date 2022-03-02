@@ -1,21 +1,18 @@
 use arc_swap::ArcSwap;
 use atomic_counter::{AtomicCounter, RelaxedCounter};
-use eframe::egui::epaint::RectShape;
-use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
-use std::ops::{Bound, Deref, DerefMut, Range, RangeBounds, RangeInclusive};
+use std::ops::{Deref, DerefMut, RangeInclusive};
 use std::sync::{Arc, RwLock};
 
-use eframe::egui::plot::{MarkerShape, Points, Polygon, Value, Values};
 use eframe::egui::util::hash;
-use eframe::egui::{Color32, Pos2, Rect};
+use eframe::egui::{Color32, ColorImage, TextureHandle};
 
 use rayon::prelude::*;
-use rayon::ScopeFifo;
 
 use super::{AdvisoryViewer, AdvisoryViewerConfig};
 
 pub trait Visualizable {
+    /// TODO update doc
     /// Returns a `Vec` of `Points`.
     ///
     /// There must be zero or one instance of `Points` for every combination of Level in the
@@ -30,23 +27,27 @@ pub trait Visualizable {
     ///   level of the quadtree
     /// + `x_range`: Range of x-values to be calculated
     /// + `y_range`: Range of y-values to be calculated
-    fn get_points<F: 'static + FnMut(f32, f32, &AdvisoryViewerConfig) -> u8 + Send + Sync + Clone>(
-        &mut self,
-        f: F,
-        x_range: RangeInclusive<f32>,
-        y_range: RangeInclusive<f32>,
-    ) -> Vec<Polygon>;
-}
-
-impl Visualizable for AdvisoryViewer {
-    fn get_points<
+    fn get_texture<
         F: 'static + FnMut(f32, f32, &AdvisoryViewerConfig) -> u8 + Send + Sync + Clone,
     >(
         &mut self,
         f: F,
         x_range: RangeInclusive<f32>,
         y_range: RangeInclusive<f32>,
-    ) -> Vec<Polygon> {
+        texture: TextureHandle,
+    ) -> TextureHandle;
+}
+
+impl Visualizable for AdvisoryViewer {
+    fn get_texture<
+        F: 'static + FnMut(f32, f32, &AdvisoryViewerConfig) -> u8 + Send + Sync + Clone,
+    >(
+        &mut self,
+        f: F,
+        x_range: RangeInclusive<f32>,
+        y_range: RangeInclusive<f32>,
+        mut texture: TextureHandle,
+    ) -> TextureHandle {
         let hash = hash(
             self.conf
                 .input_values
@@ -72,14 +73,18 @@ impl Visualizable for AdvisoryViewer {
             let tree_swap = self.visualizer_tree.clone();
             let current_hash = self.config_hash.clone();
             let this_hash = hash.clone();
+            let length = 2usize.pow(config.max_levels as u32);
 
             std::thread::spawn(move || {
                 let tree = VisualizerNode {
                     value: 0,
                     x_range: x_range.clone(),
                     y_range: y_range.clone(),
+                    x_pixel_range: 0..=length,
+                    y_pixel_range: 0..=length,
                     children: Default::default(),
-                }.gen_value(f.clone(), &config);
+                }
+                .gen_value(f.clone(), &config);
                 {
                     let current_hash = current_hash.read().unwrap();
                     if *current_hash != this_hash {
@@ -97,8 +102,9 @@ impl Visualizable for AdvisoryViewer {
                     &config,
                 );
 
-                for level in 0..config.max_levels{
-                    tree.level_nodes(level).par_iter()
+                for level in 0..config.max_levels {
+                    tree.level_nodes(level)
+                        .par_iter()
                         .filter(|_| *current_hash.read().unwrap() == this_hash)
                         .filter(|n| n.children.load().is_none())
                         .filter(|n| !n.corners_are_identical(f.clone(), &config))
@@ -109,12 +115,20 @@ impl Visualizable for AdvisoryViewer {
                 }
             });
         }
-
         drop(hash_lock);
 
-        self.visualizer_tree
-            .load()
-            .generate_polygons(&self.conf.output_variants)
+        for level in self.conf.max_levels..=self.conf.max_levels {
+            self.visualizer_tree.load().level_nodes(level)
+                .iter()
+                .for_each(|n| {
+                    let image_data = n.gen_image(&self.conf.output_variants);
+                    texture.set_partial(
+                        [0, 0],
+                        ColorImage::new([1,1], Color32::RED),
+                    );
+                })
+        }
+        texture
     }
 }
 
@@ -128,38 +142,57 @@ pub struct VisualizerNode {
     value: u8,
     x_range: RangeInclusive<f32>,
     y_range: RangeInclusive<f32>,
+    x_pixel_range: RangeInclusive<usize>,
+    y_pixel_range: RangeInclusive<usize>,
     children: Arc<ArcSwap<Option<[VisualizerNode; 4]>>>,
 }
 
 impl VisualizerNode {
-    fn generate_polygons(&self, output: &HashMap<u8, (String, Color32)>) -> Vec<Polygon> {
-        if let Some(children) = self.children.load_full().deref() {
-            children
-                .iter()
-                .flat_map(|c| c.generate_polygons(output))
-                .collect()
-        } else {
-            if let Some((_, c)) = output.get(&self.value).cloned() {
-                vec![Polygon::new(Values::from_values(vec![
-                    Value::new(*self.x_range.start(), *self.y_range.start()),
-                    Value::new(*self.x_range.start(), *self.y_range.end()),
-                    Value::new(*self.x_range.end(), *self.y_range.end()),
-                    Value::new(*self.x_range.end(), *self.y_range.start()),
-                ]))
-                .color(c)
-                .fill_alpha(1.0)]
-            } else {
-                vec![]
-            }
-        }
+    //fn generate_polygons(&self, output: &HashMap<u8, (String, Color32)>) -> Vec<Polygon> {
+    //    if let Some(children) = self.children.load_full().deref() {
+    //        children
+    //            .iter()
+    //            .flat_map(|c| c.generate_polygons(output))
+    //            .collect()
+    //    } else {
+    //        if let Some((_, c)) = output.get(&self.value).cloned() {
+    //            vec![Polygon::new(Values::from_values(vec![
+    //                Value::new(*self.x_range.start(), *self.y_range.start()),
+    //                Value::new(*self.x_range.start(), *self.y_range.end()),
+    //                Value::new(*self.x_range.end(), *self.y_range.end()),
+    //                Value::new(*self.x_range.end(), *self.y_range.start()),
+    //            ]))
+    //            .color(c)
+    //            .fill_alpha(1.0)]
+    //        } else {
+    //            vec![]
+    //        }
+    //    }
+    //}
+
+    fn gen_image(&self, output: &HashMap<u8, (String, Color32)>) -> ColorImage {
+        let color = output
+            .get(&self.value)
+            .map(|(_, c)| c.clone())
+            .unwrap_or_else(|| Color32::TRANSPARENT);
+        ColorImage::new(
+            [
+                self.x_pixel_range.end() - self.x_pixel_range.start(),
+                self.y_pixel_range.end() - self.y_pixel_range.start(),
+            ],
+            color,
+        )
     }
 
-    fn level_nodes(&self, level: usize) -> Vec<VisualizerNode>{
+    fn level_nodes(&self, level: usize) -> Vec<VisualizerNode> {
         if level == 0 {
             vec![self.clone()]
-        }else {
+        } else {
             if let Some(children) = self.children.load_full().deref().clone() {
-                children.into_par_iter().flat_map(|c| c.level_nodes(level - 1)).collect()
+                children
+                    .into_par_iter()
+                    .flat_map(|c| c.level_nodes(level - 1))
+                    .collect()
             } else {
                 vec![]
             }
@@ -217,29 +250,39 @@ impl VisualizerNode {
     ) {
         let mid_x = (self.x_range.end() + self.x_range.start()) / 2f32;
         let mid_y = (self.y_range.end() + self.y_range.start()) / 2f32;
+        let mid_x_pixel = (self.x_pixel_range.end() + self.x_pixel_range.start()) / 2;
+        let mid_y_pixel = (self.y_pixel_range.end() + self.y_pixel_range.start()) / 2;
 
         let bl = VisualizerNode {
             value: 0,
             x_range: *self.x_range.start()..=mid_x,
             y_range: *self.y_range.start()..=mid_y,
+            x_pixel_range: *self.x_pixel_range.start()..=mid_x_pixel,
+            y_pixel_range: *self.y_pixel_range.start()..=mid_y_pixel,
             children: Default::default(),
         };
         let tl = VisualizerNode {
             value: 0,
             x_range: *self.x_range.start()..=mid_x,
             y_range: mid_y..=*self.y_range.end(),
+            x_pixel_range: *self.x_pixel_range.start()..=mid_x_pixel,
+            y_pixel_range: mid_y_pixel..=*self.y_pixel_range.end(),
             children: Default::default(),
         };
         let tr = VisualizerNode {
             value: 0,
             x_range: mid_x..=*self.x_range.end(),
             y_range: mid_y..=*self.y_range.end(),
+            x_pixel_range: mid_x_pixel..=*self.x_pixel_range.end(),
+            y_pixel_range: mid_y_pixel..=*self.y_pixel_range.end(),
             children: Default::default(),
         };
         let br = VisualizerNode {
             value: 0,
             x_range: mid_x..=*self.x_range.end(),
             y_range: *self.y_range.start()..=mid_y,
+            x_pixel_range: mid_x_pixel..=*self.x_pixel_range.end(),
+            y_pixel_range: *self.y_pixel_range.start()..=mid_y_pixel,
             children: Default::default(),
         };
         self.children.store(Arc::new(Some(
@@ -286,6 +329,8 @@ impl Default for VisualizerNode {
             value: 255,
             x_range: 0.0..=0.0,
             y_range: 0.0..=0.0,
+            x_pixel_range: 0..=0,
+            y_pixel_range: 0..=0,
             children: Default::default(),
         }
     }

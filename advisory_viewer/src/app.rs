@@ -1,19 +1,16 @@
 use arc_swap::ArcSwap;
 use atomic_counter::{AtomicCounter, RelaxedCounter};
 use std::collections::HashMap;
-use std::hash::Hash;
-use std::ops::Bound;
 use std::sync::{Arc, RwLock};
 
-use eframe::egui::plot::{MarkerShape, Points, Polygon};
-use eframe::{
-    egui::{
-        self,
-        plot::{Line, Plot, Value, Values},
-        Color32, DragValue,
-    },
-    epi,
+use eframe::epi;
+use eframe::egui::plot::PlotImage;
+use eframe::egui;
+use eframe::egui::{
+    plot::{Plot, Value},
+    Color32, DragValue,
 };
+use eframe::egui::{ColorImage, TextureHandle, Vec2};
 
 use uom::si::angle::radian;
 use uom::si::f32::*;
@@ -172,11 +169,11 @@ impl epi::App for TemplateApp {
                     ui.end_row();
 
                     ui.label("Minimal Detail Level");
-                    ui.add(egui::Slider::new(&mut conf.min_levels, 0..=25).logarithmic(true));
+                    ui.add(egui::Slider::new(&mut conf.min_levels, 0..=15).logarithmic(true));
                     ui.end_row();
 
                     ui.label("Maximum Detail Level");
-                    ui.add(DragValue::new(&mut conf.max_levels).clamp_range(1..=32));
+                    ui.add(DragValue::new(&mut conf.max_levels).clamp_range(0..=15));
                     ui.end_row();
 
                     ui.label("X-Axis Selector");
@@ -231,8 +228,10 @@ impl epi::App for TemplateApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            let polygons = match viewer_key.as_str() {
-                "HCAS" => current_viewer.get_points(
+            let length = 2usize.pow(current_viewer.conf.max_levels as u32);
+            let texture = ctx.load_texture("Advisory", ColorImage::new([length; 2], Color32::TRANSPARENT));
+            let texture = match viewer_key.as_str() {
+                "HCAS" => current_viewer.get_texture(
                     |x, y, c| {
                         let mut config = c.clone();
                         let mut cas = opencas::HCas {
@@ -251,15 +250,24 @@ impl epi::App for TemplateApp {
                     },
                     0.0..=56e3,
                     -23e3..=23e3,
+                    texture
                 ),
                 _ => {
-                    vec![]
+                    ctx.load_texture("Advisory", ColorImage::default())
                 }
             };
+            //Plot::new("my_plot").data_aspect(1.0).show(ui, |plot_ui| {
+            //    for p in polygons.into_iter() {
+            //        plot_ui.polygon(p);
+            //    }
+            //});
             Plot::new("my_plot").data_aspect(1.0).show(ui, |plot_ui| {
-                for p in polygons.into_iter() {
-                    plot_ui.polygon(p);
-                }
+                let id = texture.id();
+                plot_ui.image(PlotImage::new(
+                    id,
+                    Value::new(56e3 / 2.0, 0),
+                    Vec2 { x: 56e3, y: 46e3 },
+                ));
             });
         });
     }
