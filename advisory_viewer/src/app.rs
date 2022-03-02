@@ -1,9 +1,11 @@
+use arc_swap::ArcSwap;
+use atomic_counter::{AtomicCounter, RelaxedCounter};
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::ops::Bound;
-use std::sync::Arc;
-use arc_swap::ArcSwap;
+use std::sync::{Arc, RwLock};
 
+use eframe::egui::plot::{MarkerShape, Points, Polygon};
 use eframe::{
     egui::{
         self,
@@ -12,15 +14,14 @@ use eframe::{
     },
     epi,
 };
-use eframe::egui::plot::{MarkerShape, Points, Polygon};
 
 use uom::si::angle::radian;
 use uom::si::f32::*;
 use uom::si::length::foot;
 use uom::si::time::second;
 
-use visualize::Visualizable;
 use crate::app::visualize::VisualizerNode;
+use visualize::Visualizable;
 
 mod visualize;
 
@@ -59,7 +60,9 @@ pub struct AdvisoryViewer {
     #[cfg_attr(feature = "persistence", serde(skip))]
     visualizer_tree: Arc<ArcSwap<VisualizerNode>>,
     #[cfg_attr(feature = "persistence", serde(skip))]
-    config_hash: Arc<ArcSwap<u64>>,
+    config_hash: Arc<RwLock<u64>>,
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    min_level_counter: Arc<RelaxedCounter>,
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -96,7 +99,8 @@ impl Default for TemplateApp {
                 max_levels: 32,
             },
             visualizer_tree: Arc::new(ArcSwap::new(Arc::new(VisualizerNode::default()))),
-            config_hash: Default::default()
+            config_hash: Default::default(),
+            min_level_counter: Default::default(),
         };
 
         Self {
@@ -165,10 +169,7 @@ impl epi::App for TemplateApp {
                     ui.end_row();
 
                     ui.label("Initial Grid stride");
-                    ui.add(
-                        egui::Slider::new(&mut conf.min_levels, 0..=25)
-                            .logarithmic(true),
-                    );
+                    ui.add(egui::Slider::new(&mut conf.min_levels, 0..=25).logarithmic(true));
                     ui.end_row();
 
                     ui.label("Maximum Detail Level");
@@ -210,6 +211,12 @@ impl epi::App for TemplateApp {
                         ui.add(DragValue::new(v));
                         ui.end_row();
                     }
+                    let quads = 4usize.pow(conf.min_levels as u32);
+                    let current_quads = current_viewer.min_level_counter.get();
+                    ui.add(
+                        egui::widgets::ProgressBar::new(current_quads as f32 / quads as f32)
+                            .text(format!("{}/{}", current_quads, quads)),
+                    );
                 });
         });
 
