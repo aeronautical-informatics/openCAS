@@ -63,6 +63,8 @@ pub struct AdvisoryViewer {
     config_hash: Arc<RwLock<u64>>,
     #[cfg_attr(feature = "persistence", serde(skip))]
     min_level_counter: Arc<RelaxedCounter>,
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    additional_quad_counter: Arc<RelaxedCounter>,
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -96,11 +98,12 @@ impl Default for TemplateApp {
                 x_axis_key: "θ".into(),
                 y_axis_key: "ψ".into(),
                 min_levels: 8,
-                max_levels: 32,
+                max_levels: 12,
             },
             visualizer_tree: Arc::new(ArcSwap::new(Arc::new(VisualizerNode::default()))),
             config_hash: Default::default(),
             min_level_counter: Default::default(),
+            additional_quad_counter: Default::default(),
         };
 
         Self {
@@ -168,7 +171,7 @@ impl epi::App for TemplateApp {
 
                     ui.end_row();
 
-                    ui.label("Initial Grid stride");
+                    ui.label("Minimal Detail Level");
                     ui.add(egui::Slider::new(&mut conf.min_levels, 0..=25).logarithmic(true));
                     ui.end_row();
 
@@ -213,10 +216,17 @@ impl epi::App for TemplateApp {
                     }
                     let quads = 4usize.pow(conf.min_levels as u32);
                     let current_quads = current_viewer.min_level_counter.get();
+
+                    ui.label("Initial Quads:");
                     ui.add(
                         egui::widgets::ProgressBar::new(current_quads as f32 / quads as f32)
                             .text(format!("{}/{}", current_quads, quads)),
                     );
+                    ui.end_row();
+
+                    ui.label("Extra Quads:");
+                    ui.label(current_viewer.additional_quad_counter.get().to_string());
+                    ui.end_row();
                 });
         });
 

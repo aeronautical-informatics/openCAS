@@ -64,30 +64,22 @@ impl Visualizable for AdvisoryViewer {
         let old_hash = std::mem::replace(hash_lock.deref_mut(), hash);
 
         if hash != old_hash {
-            let counter = self.min_level_counter.clone();
-            counter.reset();
+            let min_counter = self.min_level_counter.clone();
+            min_counter.reset();
+            let additional_counter = self.additional_quad_counter.clone();
+            additional_counter.reset();
             let config = self.conf.clone();
             let tree_swap = self.visualizer_tree.clone();
             let current_hash = self.config_hash.clone();
             let this_hash = hash.clone();
 
             std::thread::spawn(move || {
-                //let x_steps = ((x_range.end() - x_range.start()) / config_copy.initial_grid_stride).abs().round() as u64;
-                //let y_steps = ((y_range.end() - y_range.start()) / config_copy.initial_grid_stride).abs().round() as u64;
-
-                //let y_iter: Vec<f32> = (0..=y_steps).into_par_iter().map(|i| y_range.start() + config_copy.initial_grid_stride * i as f32).collect();
-                //let x_iter: Vec<f32> = (0..=x_steps).into_par_iter().map(|i| x_range.start() + config_copy.initial_grid_stride * i as f32).collect();
-
-                //let values: Vec<Item> = y_iter.par_iter().flat_map(|y| x_iter.par_iter().map(|x| Item{
-                //    point: [*x, *y],
-                //    value: f.clone()(*x, *y, &config_copy)
-                //}).collect::<Vec<_>>()).collect();
-                let mut tree = VisualizerNode {
-                    value: f.clone()(*x_range.start(), *y_range.start(), &config),
+                let tree = VisualizerNode {
+                    value: 0,
                     x_range: x_range.clone(),
                     y_range: y_range.clone(),
                     children: Default::default(),
-                };
+                }.gen_value(f.clone(), &config);
                 {
                     let current_hash = current_hash.read().unwrap();
                     if *current_hash != this_hash {
@@ -95,23 +87,26 @@ impl Visualizable for AdvisoryViewer {
                     }
                     tree_swap.store(Arc::new(tree.clone()))
                 }
-                //for l in 0..config.min_levels {
-                //    tree.mut_level_nodes(l).par_iter_mut().for_each(|n| n.gen_children(f.clone(), &config));
-
-                //    if **current_hash.load() != this_hash{
-                //        return;
-                //    }
-                //    tree_swap.store(Arc::new(tree.clone()))
-                //}
 
                 tree.gen_children_rec(
                     f.clone(),
                     config.min_levels,
                     current_hash.clone(),
                     this_hash,
-                    &counter,
+                    &min_counter,
                     &config,
                 );
+
+                for level in 0..config.max_levels{
+                    tree.level_nodes(level).par_iter()
+                        .filter(|_| *current_hash.read().unwrap() == this_hash)
+                        .filter(|n| n.children.load().is_none())
+                        .filter(|n| !n.corners_are_identical(f.clone(), &config))
+                        .for_each(|n| {
+                            n.gen_children(f.clone(), &config);
+                            additional_counter.add(4);
+                        });
+                }
             });
         }
 
@@ -159,17 +154,17 @@ impl VisualizerNode {
         }
     }
 
-    //fn mut_level_nodes(&mut self, level: usize) -> Vec<&mut VisualizerNode>{
-    //    if level == 0 {
-    //        vec![self]
-    //    }else {
-    //        if let Some(children) = self.children.map(|c| c.load_full()) {
-    //            children.into_par_iter().flat_map(|c| c.mut_level_nodes(level - 1)).collect()
-    //        } else {
-    //            vec![]
-    //        }
-    //    }
-    //}
+    fn level_nodes(&self, level: usize) -> Vec<VisualizerNode>{
+        if level == 0 {
+            vec![self.clone()]
+        }else {
+            if let Some(children) = self.children.load_full().deref().clone() {
+                children.into_par_iter().flat_map(|c| c.level_nodes(level - 1)).collect()
+            } else {
+                vec![]
+            }
+        }
+    }
 
     fn gen_value<F: FnMut(f32, f32, &AdvisoryViewerConfig) -> u8>(
         mut self,
@@ -191,7 +186,6 @@ impl VisualizerNode {
         counter: &RelaxedCounter,
         config: &AdvisoryViewerConfig,
     ) {
-        counter.inc();
         if level > 0 {
             self.gen_children(f.clone(), config);
             if let Some(mut c) = self.children.load_full().deref().clone() {
@@ -211,6 +205,8 @@ impl VisualizerNode {
                 });
                 self.children.store(Arc::new(Some(c)));
             }
+        } else {
+            counter.inc();
         }
     }
 
@@ -252,7 +248,7 @@ impl VisualizerNode {
     }
 
     fn corners_are_identical<F: FnMut(f32, f32, &AdvisoryViewerConfig) -> u8 + Clone>(
-        self,
+        &self,
         f: F,
         config: &AdvisoryViewerConfig,
     ) -> bool {
