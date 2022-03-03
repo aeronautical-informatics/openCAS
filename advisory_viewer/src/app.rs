@@ -5,7 +5,7 @@ use std::hash::Hash;
 use std::ops::{Bound, RangeInclusive};
 use std::sync::{Arc, RwLock};
 
-use eframe::egui::plot::{MarkerShape, Points, Polygon};
+use eframe::egui::plot::{MarkerShape, Points, Polygon, Text};
 use eframe::{
     egui::{
         self,
@@ -20,11 +20,6 @@ use uom::si::f32::*;
 use uom::si::length::foot;
 use uom::si::time::second;
 
-use crate::app::visualize::VisualizerNode;
-use visualize::Visualizable;
-
-mod visualize;
-
 use strum::EnumMessage;
 use strum::IntoEnumIterator;
 
@@ -33,6 +28,7 @@ pub struct HCasCartesianGui {
     y_axis_key: HCasInput,
     input_ranges: HashMap<HCasInput, RangeInclusive<f32>>,
     inputs: HashMap<HCasInput, f32>,
+    pra: u8,
 }
 
 #[derive(
@@ -61,10 +57,6 @@ pub enum HCasInput {
     #[strum(message = "ft", detailed_message = "lateral dist")]
     Y,
 
-    /// own bearing
-    #[strum(message = "rad", detailed_message = "ψ")]
-    OwnBearing,
-
     /// intruder bearing
     #[strum(message = "rad", detailed_message = "θ")]
     IntruderBearing,
@@ -80,7 +72,6 @@ impl Default for HCasCartesianGui {
                 (HCasInput::Tau, 0.0..=60.0),
                 (HCasInput::X, 0.0..=56e3),
                 (HCasInput::Y, -56e3..=56e3),
-                (HCasInput::OwnBearing, angle_range.clone()),
                 (HCasInput::IntruderBearing, angle_range.clone()),
             ]
             .into_iter()
@@ -89,11 +80,11 @@ impl Default for HCasCartesianGui {
                 (HCasInput::Tau, 15.0),
                 (HCasInput::X, 0.0),
                 (HCasInput::Y, 0.0),
-                (HCasInput::OwnBearing, 0.0),
                 (HCasInput::IntruderBearing, 330.0),
             ]
             .into_iter()
             .collect(),
+            pra: 0,
         };
 
         assert_eq!(HCasInput::iter().len(), new_self.input_ranges.len());
@@ -103,11 +94,10 @@ impl Default for HCasCartesianGui {
     }
 }
 
-impl HCasCartesianGui {
-    pub fn draw_config(&mut self, ui: &mut egui::Ui) {
+impl Visualizable for HCasCartesianGui {
+    fn draw_config(&mut self, ui: &mut egui::Ui) {
         egui::Grid::new("hcas_gui_settings_grid")
             .num_columns(2)
-            .spacing([40.0, 4.0])
             .striped(true)
             .show(ui, |ui| {
                 ui.label("X-Axis Selector");
@@ -126,6 +116,17 @@ impl HCasCartesianGui {
                     .show_ui(ui, |ui| {
                         for value in HCasInput::iter() {
                             ui.selectable_value(&mut self.y_axis_key, value, value.as_ref());
+                        }
+                    });
+                ui.end_row();
+
+                ui.label("Previous Advice");
+                let advisories = ["CoC", "WL", "WR", "SL", "SR"];
+                egui::ComboBox::from_id_source("previous_advice_combo")
+                    .selected_text(advisories[self.pra as usize])
+                    .show_ui(ui, |ui| {
+                        for (i, adv) in advisories.iter().enumerate() {
+                            ui.selectable_value(&mut self.pra, i as u8, *adv);
                         }
                     });
                 ui.end_row();
@@ -150,9 +151,6 @@ impl HCasCartesianGui {
                     );
                     ui.end_row();
                 }
-
-                ui.separator();
-                ui.end_row();
 
                 // add inputs for the input ranges
                 for (k, v) in &mut self.input_ranges {
@@ -194,42 +192,81 @@ impl HCasCartesianGui {
                 }
             });
     }
+
+    fn get_fn(&self) -> ViewerFn {
+        use HCasInput::*;
+        let last_adv = self.pra.try_into().unwrap();
+        let mut inputs = self.inputs.clone();
+        let x_axis_key = self.x_axis_key;
+        let y_axis_key = self.y_axis_key;
+
+        Box::new(move |x, y| {
+            let mut cas = opencas::HCas {
+                last_advisory: last_adv,
+            };
+            *inputs.get_mut(&x_axis_key).unwrap() = x;
+            *inputs.get_mut(&y_axis_key).unwrap() = y;
+
+            let tau = Time::new::<second>(*inputs.get(&Tau).unwrap());
+            let forward = Length::new::<foot>(*inputs.get(&X).unwrap());
+            let left = Length::new::<foot>(*inputs.get(&Y).unwrap());
+            let psi = Angle::new::<radian>(*inputs.get(&IntruderBearing).unwrap());
+            cas.process_cartesian(tau, forward, left, psi).0 as u8
+        })
+    }
+
+    fn draw_plot(&mut self, ui: &mut egui::Ui) {
+        todo!()
+    }
+
+    fn get_viewer_config(&self) -> ViewerConfig {
+        todo!()
+    }
 }
 
-#[derive(Debug, Default, Clone, PartialEq)]
-#[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
-pub struct AdvisoryViewerConfig {
-    /// contains all input values
-    pub input_values: HashMap<String, f32>,
+type ViewerFn = Box<dyn FnMut(f32, f32) -> u8 + Send + Sync>;
 
+trait Visualizable {
+    /// draw the config panel for this visualizable
+    fn draw_config(&mut self, ui: &mut egui::Ui);
+
+    /// draw the actual thing
+    fn draw_plot(&mut self, ui: &mut egui::Ui);
+
+    /// Get the function used to color the texture by the visualizer
+    fn get_fn(&self) -> ViewerFn;
+
+    fn get_viewer_config(&self) -> ViewerConfig;
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
+pub struct ViewerConfig {
     /// the output value -> Color mapping
     /// For the example of the H-CAS, this is fife: CoC, WL, WR, SL, SR
     pub output_variants: HashMap<u8, (String, Color32)>,
 
-    /// The previous output
-    pub previous_output: u8,
+    /// From where to where to render on the x-axis
+    pub x_axis_range: RangeInclusive<f32>,
 
-    /// Key to `input_values`, describing which input value is to be used as x axis
-    pub x_axis_key: String,
+    /// From where to where to render on the y-axis
+    pub y_axis_range: RangeInclusive<f32>,
 
-    /// Key to `input_values`, describing which input value is to be used as y axis
-    pub y_axis_key: String,
-
-    /// Initial resolution of the grid
+    /// Initial level of detail to redner
     pub min_levels: usize,
 
-    /// Maximum levels of the Quadtree
+    /// Maximum level of detail to render
     pub max_levels: usize,
 }
 
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
 pub struct AdvisoryViewer {
-    pub conf: AdvisoryViewerConfig,
+    pub conf: ViewerConfig,
     // TODO Insert whatever you need to cache the quadtree
     // Remember to annotate it with
     // #[cfg_attr(feature = "persistence", serde(skip))]
-    #[cfg_attr(feature = "persistence", serde(skip))]
-    visualizer_tree: Arc<ArcSwap<VisualizerNode>>,
+    //#[cfg_attr(feature = "persistence", serde(skip))]
+    //visualizer_tree: Arc<ArcSwap<VisualizerNode>>,
     #[cfg_attr(feature = "persistence", serde(skip))]
     config_hash: Arc<RwLock<u64>>,
     #[cfg_attr(feature = "persistence", serde(skip))]
@@ -242,44 +279,23 @@ pub struct AdvisoryViewer {
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
 pub struct TemplateApp {
-    viewers: HashMap<String, AdvisoryViewer>,
+    viewers: HashMap<String, Box<dyn Visualizable>>,
     viewer_key: String,
-    hcas_gui: HCasCartesianGui,
 }
 
 impl Default for TemplateApp {
     fn default() -> Self {
-        let hcas_av = AdvisoryViewer {
-            conf: AdvisoryViewerConfig {
-                previous_output: 0,
-                input_values: ["τ", "forward", "left", "ψ", "θ"]
-                    .into_iter()
-                    .map(|e| (e.to_string(), 0.0))
-                    .collect(),
-                output_variants: [
-                    (1, "WL", Color32::LIGHT_RED),
-                    (2, "WR", Color32::LIGHT_GREEN),
-                    (3, "SL", Color32::RED),
-                    (4, "SR", Color32::GREEN),
-                ]
-                .into_iter()
-                .map(|(i, k, v)| (i.try_into().unwrap(), (k.to_string(), v)))
-                .collect(),
-                x_axis_key: "θ".into(),
-                y_axis_key: "ψ".into(),
-                min_levels: 8,
-                max_levels: 12,
-            },
-            visualizer_tree: Arc::new(ArcSwap::new(Arc::new(VisualizerNode::default()))),
-            config_hash: Default::default(),
-            min_level_counter: Default::default(),
-            additional_quad_counter: Default::default(),
-        };
+        let viewers: HashMap<String, Box<dyn Visualizable>> = [(
+            "HCAS Cartesian".into(),
+            Box::new(HCasCartesianGui::default()) as _,
+        )]
+        .into_iter()
+        .collect();
+        let viewer_key = viewers.keys().next().unwrap().into();
 
         Self {
-            viewers: [("HCAS".into(), hcas_av)].into_iter().collect(),
-            viewer_key: "HCAS".into(),
-            hcas_gui: Default::default(),
+            viewers,
+            viewer_key,
         }
     }
 }
@@ -314,98 +330,38 @@ impl epi::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
-        let Self {
-            ref mut viewers,
-            ref mut viewer_key,
-            ref mut hcas_gui,
-        } = self;
+        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+            // The top panel is often a good place for a menu bar:
+            egui::menu::bar(ui, |ui| {
+                ui.menu_button("Choose Viewee", |ui| {
+                    for k in self.viewers.keys() {
+                        if ui.button(k).clicked() {
+                            self.viewer_key = k.into();
+                        }
+                    }
+                });
+            });
+        });
 
-        let av_keys: Vec<_> = viewers.keys().cloned().collect();
-        let current_viewer = viewers.get_mut(viewer_key).unwrap();
+        let viewer_key = &self.viewer_key;
+        let viewer = self.viewers.get_mut(viewer_key).unwrap();
 
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
-            let AdvisoryViewer { ref mut conf, .. } = current_viewer;
-            ui.heading("Settings");
-
-            /*
-                egui::Grid::new("my_grid")
-                    .num_columns(2)
-                    .spacing([40.0, 4.0])
-                    .striped(true)
-                    .show(ui, |ui| {
-                        ui.label("AdvisoryViewer");
-                        egui::ComboBox::from_id_source("viewer_combo")
-                            .selected_text(viewer_key.as_str())
-                            .show_ui(ui, |ui| {
-                                for value in av_keys {
-                                    ui.selectable_value(viewer_key, value.clone(), value);
-                                }
-                            });
-
-                        ui.end_row();
-
-                        ui.label("Minimal Detail Level");
-                        ui.add(egui::Slider::new(&mut conf.min_levels, 0..=25).logarithmic(true));
-                        ui.end_row();
-
-                        ui.label("Maximum Detail Level");
-                        ui.add(DragValue::new(&mut conf.max_levels).clamp_range(1..=32));
-                        ui.end_row();
-
-                        ui.label("X-Axis Selector");
-                        egui::ComboBox::from_id_source("x_axis_combo")
-                            .selected_text(conf.x_axis_key.as_str())
-                            .show_ui(ui, |ui| {
-                                for value in conf.input_values.keys() {
-                                    if value == &conf.y_axis_key {
-                                        continue;
-                                    }
-
-                                    ui.selectable_value(&mut conf.x_axis_key, value.to_string(), value);
-                                }
-                            });
-                        ui.end_row();
-
-                        ui.label("Y-Axis Selector");
-                        egui::ComboBox::from_id_source("y_axis_combo")
-                            .selected_text(conf.y_axis_key.as_str())
-                            .show_ui(ui, |ui| {
-                                for value in conf.input_values.keys() {
-                                    if value == &conf.x_axis_key {
-                                        continue;
-                                    }
-                                    ui.selectable_value(&mut conf.y_axis_key, value.to_string(), value);
-                                }
-                            });
-                        ui.end_row();
-
-                        for (k, v) in &mut conf.input_values {
-                            if k == &conf.x_axis_key || k == &conf.y_axis_key {
-                                continue;
-                            }
-                            ui.label(k);
-                            ui.add(DragValue::new(v));
-                            ui.end_row();
-                        }
-                        let quads = 4usize.pow(conf.min_levels as u32);
-                        let current_quads = current_viewer.min_level_counter.get();
-
-                        ui.label("Initial Quads:");
-                        ui.add(
-                            egui::widgets::ProgressBar::new(current_quads as f32 / quads as f32)
-                                .text(format!("{}/{}", current_quads, quads)),
-                        );
-                        ui.end_row();
-
-                        ui.label("Extra Quads:");
-                        ui.label(current_viewer.additional_quad_counter.get().to_string());
-                        ui.end_row();
-                    });
-            */
-            hcas_gui.draw_config(ui);
+            ui.heading(format!("Settings for {viewer_key}"));
+            viewer.draw_config(ui);
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            let sin = (0..1000).map(|i| {
+                let x = i as f64 * 0.01;
+                Value::new(x, x.sin())
+            });
+            let line = Line::new(Values::from_values_iter(sin));
+            Plot::new("my_plot")
+                .data_aspect(1.0)
+                .show(ui, |plot_ui| plot_ui.line(line));
+
+            /*
             let polygons = match viewer_key.as_str() {
                 "HCAS" => current_viewer.get_points(
                     |x, y, c| {
@@ -436,6 +392,7 @@ impl epi::App for TemplateApp {
                     plot_ui.polygon(p);
                 }
             });
+            */
         });
     }
 }

@@ -17,6 +17,7 @@
             stable.rustc
             stable.cargo
             stable.clippy
+            stable.rustfmt
             targets."wasm32-unknown-unknown".stable.rust-std
           ];
         naersk-lib = (naersk.lib.${system}.override {
