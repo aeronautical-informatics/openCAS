@@ -1,140 +1,104 @@
 use arc_swap::ArcSwap;
 use atomic_counter::{AtomicCounter, RelaxedCounter};
 use std::collections::HashMap;
-use std::ops::{Deref, DerefMut, RangeInclusive};
+use std::ops::{Deref, RangeInclusive, Range};
 use std::sync::{Arc, RwLock};
 
-use eframe::egui::util::hash;
 use eframe::egui::{Color32, ColorImage, TextureHandle};
+use ndarray::{Array2, Array3, ArrayBase};
 
 use rayon::prelude::*;
+use crate::app::AdvisoryViewerConfig;
 
-use super::{AdvisoryViewer, AdvisoryViewerConfig};
+use super::AdvisoryViewer;
 
 pub trait Visualizable {
-    /// TODO update doc
-    /// Returns a `Vec` of `Points`.
-    ///
-    /// There must be zero or one instance of `Points` for every combination of Level in the
-    /// quadtree and output_variant. When there are 3 levels in the quadtree and 5 different output
-    /// values, than the return value should be a Vec of up to 15 elements. It is possible however,
-    /// that less than 15 elements are present, if one output value never occurs in that level of
-    /// the quadtree.
-    ///
-    /// # Arguments
-    /// + `f`: The actual function which maps the input_values to one of the output_variants
-    /// + `initial_grid_stride`: The distance between two points on the regular grid for the first
-    ///   level of the quadtree
-    /// + `x_range`: Range of x-values to be calculated
-    /// + `y_range`: Range of y-values to be calculated
-    fn get_texture<
-        F: 'static + FnMut(f32, f32, &AdvisoryViewerConfig) -> u8 + Send + Sync + Clone,
-    >(
-        &mut self,
-        f: F,
-        x_range: RangeInclusive<f32>,
-        y_range: RangeInclusive<f32>,
-        texture: TextureHandle,
-    ) -> TextureHandle;
+    fn start_with(&self, config: AdvisoryViewerConfig, texture: TextureHandle, f: Box<dyn Fn(f32, f32)-> u8 + Send + Sync>);
+    // ((done minimal quads, target minimal quads), extra quads)
+    fn get_status(&self)->((usize, usize), usize);
 }
 
 impl Visualizable for AdvisoryViewer {
-    fn get_texture<
-        F: 'static + FnMut(f32, f32, &AdvisoryViewerConfig) -> u8 + Send + Sync + Clone,
-    >(
-        &mut self,
-        f: F,
-        x_range: RangeInclusive<f32>,
-        y_range: RangeInclusive<f32>,
-        mut texture: TextureHandle,
-    ) -> TextureHandle {
-        let hash = hash(
-            self.conf
-                .input_values
-                .values()
-                .map(|v| v.to_string())
-                .chain(vec![
-                    self.conf.min_levels.to_string(),
-                    self.conf.max_levels.to_string(),
-                    self.conf.x_axis_key.clone(),
-                    self.conf.y_axis_key.clone(),
-                ])
-                .fold(String::from(""), |p, v| p + &v),
-        );
-        let mut hash_lock = self.config_hash.write().unwrap();
-        let old_hash = std::mem::replace(hash_lock.deref_mut(), hash);
+    fn start_with(&self, config: AdvisoryViewerConfig, texture: TextureHandle, f: Box<dyn Fn(f32, f32)-> u8 + Send + Sync>) {
+        let prev = self.valid.load_full();
+        let mut prev_lock = prev.write().unwrap();
+        let this = Arc::new(RwLock::new(true));
+        let this_lock = this.write().unwrap();
+        self.valid.store(this.clone());
+        *prev_lock = false;
 
-        if hash != old_hash {
-            let min_counter = self.min_level_counter.clone();
-            min_counter.reset();
-            let additional_counter = self.additional_quad_counter.clone();
-            additional_counter.reset();
-            let config = self.conf.clone();
-            let tree_swap = self.visualizer_tree.clone();
-            let current_hash = self.config_hash.clone();
-            let this_hash = hash.clone();
-            let length = 2usize.pow(config.max_levels as u32);
+        let min_level_counter = self.min_level_counter.clone();
+        min_level_counter.reset();
+        let additional_quad_counter = self.additional_quad_counter.clone();
+        additional_quad_counter.reset();
+        let side_length = 2usize.pow(config.max_levels as u32);
+        let tree = Arc::new(VisualizerNode {
+            value: 0,
+            x_range: config.x_axis_range,
+            y_range: config.y_axis_range,
+            x_pixel_range: 0..side_length,
+            y_pixel_range: 0..side_length,
+            children: Default::default(),
+        }.gen_value(&f));
+        self.visualizer_tree.store(tree.clone());
 
-            std::thread::spawn(move || {
-                let tree = VisualizerNode {
-                    value: 0,
-                    x_range: x_range.clone(),
-                    y_range: y_range.clone(),
-                    x_pixel_range: 0..=length,
-                    y_pixel_range: 0..=length,
-                    children: Default::default(),
-                }
-                .gen_value(f.clone(), &config);
-                {
-                    let current_hash = current_hash.read().unwrap();
-                    if *current_hash != this_hash {
-                        return;
-                    }
-                    tree_swap.store(Arc::new(tree.clone()))
-                }
+        drop(prev_lock);
+        drop(this_lock);
 
-                tree.gen_children_rec(
-                    f.clone(),
-                    config.min_levels,
-                    current_hash.clone(),
-                    this_hash,
-                    &min_counter,
-                    &config,
-                );
+        let mut image_buffer: Array2<Color32> = Array2::default((side_length, side_length));
+        image_buffer.exact_chunks_mut((2, 2)).into_iter().collect::<Vec<_>>().par_iter_mut().for_each(|_| {});
 
-                for level in 0..config.max_levels {
-                    tree.level_nodes(level)
-                        .par_iter()
-                        .filter(|_| *current_hash.read().unwrap() == this_hash)
-                        .filter(|n| n.children.load().is_none())
-                        .filter(|n| !n.corners_are_identical(f.clone(), &config))
-                        .for_each(|n| {
-                            n.gen_children(f.clone(), &config);
-                            additional_counter.add(4);
-                        });
-                }
-            });
-        }
-        drop(hash_lock);
+        std::thread::spawn(move || {
+            tree.gen_children_rec(
+                &f,
+                config.min_levels,
+                &this,
+                &min_level_counter,
+            );
 
-        for level in self.conf.max_levels..=self.conf.max_levels {
-            self.visualizer_tree.load().level_nodes(level)
-                .iter()
-                .for_each(|n| {
-                    let image_data = n.gen_image(&self.conf.output_variants);
-                    texture.set_partial(
-                        [0, 0],
-                        ColorImage::new([1,1], Color32::RED),
-                    );
-                })
-        }
-        texture
+            for level in 0..config.max_levels {
+                tree.level_nodes(level)
+                    .par_iter()
+                    .filter(|n| n.children.load().is_none())
+                    .filter(|n| !n.corners_are_identical(&f))
+                    .filter(|_| *this.read().unwrap())
+                    .for_each(|n| {
+                        n.gen_children(&f);
+                        additional_quad_counter.add(4);
+                    });
+            }
+        });
+
+        //let length = 2usize.pow(self.conf.max_levels as u32);
+        //let mut buffer: Vec<_> = (0..(length*length)).flat_map(|_| Color32::RED.to_srgba_unmultiplied() ).collect();
+        //for level in 0..=self.conf.max_levels {
+        //    self.visualizer_tree.load().level_nodes(level)
+        //        .iter()
+        //        .for_each(|n| {
+        //            //let image_data = n.gen_image(&self.conf.output_variants);
+        //            //texture.set_partial(
+        //            //    [*n.x_pixel_range.start(), *n.y_pixel_range.start()],
+        //            //    image_data,
+        //            //);
+        //            let color = self.conf.output_variants.get(&n.value)
+        //                .map(|(_, c)| c.clone()).unwrap_or_else(|| Color32::TRANSPARENT);
+        //            for y in *n.y_pixel_range.start()..*n.y_pixel_range.end(){
+        //                for x in *n.x_pixel_range.start()..*n.x_pixel_range.end(){
+        //                    *buffer.get_mut((x+y*length)*4).unwrap() = color.to_srgba_unmultiplied()[0];
+        //                    *buffer.get_mut((x+y*length)*4+1).unwrap() = color.to_srgba_unmultiplied()[1];
+        //                    *buffer.get_mut((x+y*length)*4+2).unwrap() = color.to_srgba_unmultiplied()[2];
+        //                    *buffer.get_mut((x+y*length)*4+3).unwrap() = color.to_srgba_unmultiplied()[3];
+        //                }
+        //            }
+        //        })
+        //}
+        //texture.set(ColorImage::from_rgba_unmultiplied([length, length], buffer.as_slice()));
+        //texture
     }
-}
 
-struct Item {
-    point: [f32; 2],
-    value: u8,
+    fn get_status(&self) -> ((usize, usize), usize) {
+        todo!()
+    }
 }
 
 #[derive(Clone)]
@@ -142,33 +106,26 @@ pub struct VisualizerNode {
     value: u8,
     x_range: RangeInclusive<f32>,
     y_range: RangeInclusive<f32>,
-    x_pixel_range: RangeInclusive<usize>,
-    y_pixel_range: RangeInclusive<usize>,
+    x_pixel_range: Range<usize>,
+    y_pixel_range: Range<usize>,
     children: Arc<ArcSwap<Option<[VisualizerNode; 4]>>>,
 }
 
 impl VisualizerNode {
-    //fn generate_polygons(&self, output: &HashMap<u8, (String, Color32)>) -> Vec<Polygon> {
-    //    if let Some(children) = self.children.load_full().deref() {
-    //        children
-    //            .iter()
-    //            .flat_map(|c| c.generate_polygons(output))
-    //            .collect()
-    //    } else {
-    //        if let Some((_, c)) = output.get(&self.value).cloned() {
-    //            vec![Polygon::new(Values::from_values(vec![
-    //                Value::new(*self.x_range.start(), *self.y_range.start()),
-    //                Value::new(*self.x_range.start(), *self.y_range.end()),
-    //                Value::new(*self.x_range.end(), *self.y_range.end()),
-    //                Value::new(*self.x_range.end(), *self.y_range.start()),
-    //            ]))
-    //            .color(c)
-    //            .fill_alpha(1.0)]
-    //        } else {
-    //            vec![]
-    //        }
-    //    }
-    //}
+    fn fill_buffer(&self, buffer: Box<dyn ArrayViewMut>, output: &AdvisoryViewerConfig) {
+        if let Some(children) = self.children.load_full().deref() {
+            children
+                .iter()
+                .flat_map(|c| c.generate_polygons(output))
+                .collect()
+        } else {
+            if let Some((_, c)) = output.get(&self.value).cloned() {
+
+            } else {
+                vec![]
+            }
+        }
+    }
 
     fn gen_image(&self, output: &HashMap<u8, (String, Color32)>) -> ColorImage {
         let color = output
@@ -177,8 +134,8 @@ impl VisualizerNode {
             .unwrap_or_else(|| Color32::TRANSPARENT);
         ColorImage::new(
             [
-                self.x_pixel_range.end() - self.x_pixel_range.start(),
-                self.y_pixel_range.end() - self.y_pixel_range.start(),
+                self.x_pixel_range.end - self.x_pixel_range.start,
+                self.y_pixel_range.end - self.y_pixel_range.start,
             ],
             color,
         )
@@ -199,40 +156,35 @@ impl VisualizerNode {
         }
     }
 
-    fn gen_value<F: FnMut(f32, f32, &AdvisoryViewerConfig) -> u8>(
+    fn gen_value(
         mut self,
-        mut f: F,
-        config: &AdvisoryViewerConfig,
+        f: &Box<dyn Fn(f32, f32)-> u8 + Send + Sync>
     ) -> Self {
         let mid_x = (self.x_range.end() + self.x_range.start()) / 2f32;
         let mid_y = (self.y_range.end() + self.y_range.start()) / 2f32;
-        self.value = f(mid_x, mid_y, config);
+        self.value = f(mid_x, mid_y);
         self
     }
 
-    fn gen_children_rec<F: FnMut(f32, f32, &AdvisoryViewerConfig) -> u8 + Send + Sync + Clone>(
+    fn gen_children_rec(
         &self,
-        f: F,
+        f: &Box<dyn Fn(f32, f32)-> u8 + Send + Sync>,
         level: usize,
-        current_hash: Arc<RwLock<u64>>,
-        this_hash: u64,
+        valid: &RwLock<bool>,
         counter: &RelaxedCounter,
-        config: &AdvisoryViewerConfig,
     ) {
         if level > 0 {
-            self.gen_children(f.clone(), config);
+            self.gen_children(f);
             if let Some(mut c) = self.children.load_full().deref().clone() {
                 c.par_iter_mut().for_each(|c| {
-                    if *current_hash.read().unwrap() != this_hash {
+                    if !*valid.read().unwrap() {
                         return;
                     }
                     c.gen_children_rec(
-                        f.clone(),
+                        &f,
                         level - 1,
-                        current_hash.clone(),
-                        this_hash,
+                        valid,
                         counter,
-                        config,
                     );
                     c.simplify()
                 });
@@ -243,62 +195,60 @@ impl VisualizerNode {
         }
     }
 
-    fn gen_children<F: FnMut(f32, f32, &AdvisoryViewerConfig) -> u8 + Clone>(
+    fn gen_children(
         &self,
-        f: F,
-        config: &AdvisoryViewerConfig,
+        f: &Box<dyn Fn(f32, f32)-> u8 + Send + Sync>
     ) {
         let mid_x = (self.x_range.end() + self.x_range.start()) / 2f32;
         let mid_y = (self.y_range.end() + self.y_range.start()) / 2f32;
-        let mid_x_pixel = (self.x_pixel_range.end() + self.x_pixel_range.start()) / 2;
-        let mid_y_pixel = (self.y_pixel_range.end() + self.y_pixel_range.start()) / 2;
+        let mid_x_pixel = (self.x_pixel_range.end + self.x_pixel_range.start) / 2;
+        let mid_y_pixel = (self.y_pixel_range.end + self.y_pixel_range.start) / 2;
 
         let bl = VisualizerNode {
             value: 0,
             x_range: *self.x_range.start()..=mid_x,
             y_range: *self.y_range.start()..=mid_y,
-            x_pixel_range: *self.x_pixel_range.start()..=mid_x_pixel,
-            y_pixel_range: *self.y_pixel_range.start()..=mid_y_pixel,
+            x_pixel_range: self.x_pixel_range.start..mid_x_pixel,
+            y_pixel_range: self.y_pixel_range.start..mid_y_pixel,
             children: Default::default(),
         };
         let tl = VisualizerNode {
             value: 0,
             x_range: *self.x_range.start()..=mid_x,
             y_range: mid_y..=*self.y_range.end(),
-            x_pixel_range: *self.x_pixel_range.start()..=mid_x_pixel,
-            y_pixel_range: mid_y_pixel..=*self.y_pixel_range.end(),
+            x_pixel_range: self.x_pixel_range.start..mid_x_pixel,
+            y_pixel_range: mid_y_pixel..self.y_pixel_range.end,
             children: Default::default(),
         };
         let tr = VisualizerNode {
             value: 0,
             x_range: mid_x..=*self.x_range.end(),
             y_range: mid_y..=*self.y_range.end(),
-            x_pixel_range: mid_x_pixel..=*self.x_pixel_range.end(),
-            y_pixel_range: mid_y_pixel..=*self.y_pixel_range.end(),
+            x_pixel_range: mid_x_pixel..self.x_pixel_range.end,
+            y_pixel_range: mid_y_pixel..self.y_pixel_range.end,
             children: Default::default(),
         };
         let br = VisualizerNode {
             value: 0,
             x_range: mid_x..=*self.x_range.end(),
             y_range: *self.y_range.start()..=mid_y,
-            x_pixel_range: mid_x_pixel..=*self.x_pixel_range.end(),
-            y_pixel_range: *self.y_pixel_range.start()..=mid_y_pixel,
+            x_pixel_range: mid_x_pixel..self.x_pixel_range.end,
+            y_pixel_range: self.y_pixel_range.start..mid_y_pixel,
             children: Default::default(),
         };
         self.children.store(Arc::new(Some(
-            [bl, tl, tr, br].map(|c| c.gen_value(f.clone(), config)),
+            [bl, tl, tr, br].map(|c| c.gen_value(f)),
         )));
     }
 
-    fn corners_are_identical<F: FnMut(f32, f32, &AdvisoryViewerConfig) -> u8 + Clone>(
+    fn corners_are_identical(
         &self,
-        f: F,
-        config: &AdvisoryViewerConfig,
+        f: &Box<dyn Fn(f32, f32)-> u8 + Send + Sync>
     ) -> bool {
-        let bl = f.clone()(*self.x_range.start(), *self.y_range.start(), config);
-        let tl = f.clone()(*self.x_range.start(), *self.y_range.end(), config);
-        let tr = f.clone()(*self.x_range.end(), *self.y_range.end(), config);
-        let br = f.clone()(*self.x_range.end(), *self.y_range.start(), config);
+        let bl = f(*self.x_range.start(), *self.y_range.start());
+        let tl = f(*self.x_range.start(), *self.y_range.end());
+        let tr = f(*self.x_range.end(), *self.y_range.end());
+        let br = f(*self.x_range.end(), *self.y_range.start());
         [bl, tl, tr, br].iter().all(|a| a.eq(&self.value))
     }
 
@@ -329,8 +279,8 @@ impl Default for VisualizerNode {
             value: 255,
             x_range: 0.0..=0.0,
             y_range: 0.0..=0.0,
-            x_pixel_range: 0..=0,
-            y_pixel_range: 0..=0,
+            x_pixel_range: 0..0,
+            y_pixel_range: 0..0,
             children: Default::default(),
         }
     }

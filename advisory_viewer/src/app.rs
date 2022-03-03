@@ -1,6 +1,7 @@
 use arc_swap::ArcSwap;
 use atomic_counter::{AtomicCounter, RelaxedCounter};
 use std::collections::HashMap;
+use std::ops::RangeInclusive;
 use std::sync::{Arc, RwLock};
 
 use eframe::epi;
@@ -10,19 +11,13 @@ use eframe::egui::{
     plot::{Plot, Value},
     Color32, DragValue,
 };
-use eframe::egui::{ColorImage, TextureHandle, Vec2};
-
-use uom::si::angle::radian;
-use uom::si::f32::*;
-use uom::si::length::foot;
-use uom::si::time::second;
+use eframe::egui::{ColorImage, Vec2};
 
 use crate::app::visualize::VisualizerNode;
-use visualize::Visualizable;
 
 mod visualize;
 
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
 pub struct AdvisoryViewerConfig {
     /// contains all input values
@@ -32,8 +27,9 @@ pub struct AdvisoryViewerConfig {
     /// For the example of the H-CAS, this is fife: CoC, WL, WR, SL, SR
     pub output_variants: HashMap<u8, (String, Color32)>,
 
-    /// The previous output
-    pub previous_output: u8,
+    pub x_axis_range: RangeInclusive<f32>,
+
+    pub y_axis_range: RangeInclusive<f32>,
 
     /// Key to `input_values`, describing which input value is to be used as x axis
     pub x_axis_key: String,
@@ -57,7 +53,7 @@ pub struct AdvisoryViewer {
     #[cfg_attr(feature = "persistence", serde(skip))]
     visualizer_tree: Arc<ArcSwap<VisualizerNode>>,
     #[cfg_attr(feature = "persistence", serde(skip))]
-    config_hash: Arc<RwLock<u64>>,
+    valid: ArcSwap<RwLock<bool>>,
     #[cfg_attr(feature = "persistence", serde(skip))]
     min_level_counter: Arc<RelaxedCounter>,
     #[cfg_attr(feature = "persistence", serde(skip))]
@@ -76,7 +72,6 @@ impl Default for TemplateApp {
     fn default() -> Self {
         let hcas_av = AdvisoryViewer {
             conf: AdvisoryViewerConfig {
-                previous_output: 0,
                 input_values: ["τ", "forward", "left", "ψ", "θ"]
                     .into_iter()
                     .map(|e| (e.to_string(), 0.0))
@@ -94,11 +89,13 @@ impl Default for TemplateApp {
                 .collect(),
                 x_axis_key: "θ".into(),
                 y_axis_key: "ψ".into(),
+                x_axis_range: 0.0..=56e3,
+                y_axis_range: -23e3..=23e3,
                 min_levels: 8,
                 max_levels: 12,
             },
             visualizer_tree: Arc::new(ArcSwap::new(Arc::new(VisualizerNode::default()))),
-            config_hash: Default::default(),
+            valid: Default::default(),
             min_level_counter: Default::default(),
             additional_quad_counter: Default::default(),
         };
@@ -230,37 +227,33 @@ impl epi::App for TemplateApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             let length = 2usize.pow(current_viewer.conf.max_levels as u32);
             let texture = ctx.load_texture("Advisory", ColorImage::new([length; 2], Color32::TRANSPARENT));
-            let texture = match viewer_key.as_str() {
-                "HCAS" => current_viewer.get_texture(
-                    |x, y, c| {
-                        let mut config = c.clone();
-                        let mut cas = opencas::HCas {
-                            last_advisory: config.previous_output.try_into().unwrap(),
-                        };
+            //let texture = match viewer_key.as_str() {
+            //    "HCAS" => current_viewer.get_texture(
+            //        |x, y, c| {
+            //            let mut config = c.clone();
+            //            let mut cas = opencas::HCas {
+            //                last_advisory: config.previous_output.try_into().unwrap(),
+            //            };
 
-                        *config.input_values.get_mut(&config.x_axis_key).unwrap() = x;
-                        *config.input_values.get_mut(&config.y_axis_key).unwrap() = y;
+            //            *config.input_values.get_mut(&config.x_axis_key).unwrap() = x;
+            //            *config.input_values.get_mut(&config.y_axis_key).unwrap() = y;
 
-                        let tau = Time::new::<second>(*config.input_values.get("τ").unwrap());
-                        let forward =
-                            Length::new::<foot>(*config.input_values.get("forward").unwrap());
-                        let left = Length::new::<foot>(*config.input_values.get("left").unwrap());
-                        let psi = Angle::new::<radian>(*config.input_values.get("ψ").unwrap());
-                        cas.process_cartesian(tau, forward, left, psi).0 as u8
-                    },
-                    0.0..=56e3,
-                    -23e3..=23e3,
-                    texture
-                ),
-                _ => {
-                    ctx.load_texture("Advisory", ColorImage::default())
-                }
-            };
-            //Plot::new("my_plot").data_aspect(1.0).show(ui, |plot_ui| {
-            //    for p in polygons.into_iter() {
-            //        plot_ui.polygon(p);
+            //            let tau = Time::new::<second>(*config.input_values.get("τ").unwrap());
+            //            let forward =
+            //                Length::new::<foot>(*config.input_values.get("forward").unwrap());
+            //            let left = Length::new::<foot>(*config.input_values.get("left").unwrap());
+            //            let psi = Angle::new::<radian>(*config.input_values.get("ψ").unwrap());
+            //            cas.process_cartesian(tau, forward, left, psi).0 as u8
+            //        },
+            //        0.0..=56e3,
+            //        -23e3..=23e3,
+            //        texture
+            //    ),
+            //    _ => {
+            //        ctx.load_texture("Advisory", ColorImage::default())
             //    }
-            //});
+            //};
+
             Plot::new("my_plot").data_aspect(1.0).show(ui, |plot_ui| {
                 let id = texture.id();
                 plot_ui.image(PlotImage::new(
