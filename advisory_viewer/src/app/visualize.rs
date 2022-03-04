@@ -86,7 +86,8 @@ impl Visualizable for AdvisoryViewer {
     }
 
     fn get_status(&self) -> ((usize, usize), usize) {
-        todo!()
+        let min_quads_target = 2usize.pow(self.conf.min_levels as u32).pow(2);
+        ((self.min_level_counter.get(), min_quads_target), self.additional_quad_counter.get())
     }
 }
 
