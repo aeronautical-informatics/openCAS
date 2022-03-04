@@ -1,3 +1,4 @@
+use eframe::egui::{DragValue, ProgressBar};
 use eframe::epaint::{ColorImage, TextureHandle};
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -32,11 +33,13 @@ pub struct HCasCartesianGui {
     input_ranges: HashMap<HCasInput, RangeInclusive<f32>>,
     inputs: HashMap<HCasInput, f32>,
     pra: u8,
+    min_level: usize,
+    max_level: usize,
 }
 impl HCasCartesianGui {
     const N_OUTPUTS: usize = 5;
     const DEFAULT_COLORS: [Color32; Self::N_OUTPUTS] = [
-        Color32::TRANSPARENT,
+        Color32::from_rgba_premultiplied(13, 13, 13, 13),
         Color32::LIGHT_RED,
         Color32::LIGHT_GREEN,
         Color32::RED,
@@ -85,7 +88,7 @@ impl Default for HCasCartesianGui {
             input_ranges: [
                 (HCasInput::Tau, 0.0..=60.0),
                 (HCasInput::X, 0.0..=56e3),
-                (HCasInput::Y, -56e3..=56e3),
+                (HCasInput::Y, -23e3..=23e3),
                 (HCasInput::IntruderBearing, angle_range.clone()),
             ]
             .into_iter()
@@ -100,6 +103,8 @@ impl Default for HCasCartesianGui {
             .collect(),
             pra: 0,
             output_colors: Self::DEFAULT_COLORS.into_iter().collect(),
+            min_level: 5,
+            max_level: 9,
         };
 
         assert_eq!(HCasInput::iter().len(), new_self.input_ranges.len());
@@ -177,6 +182,8 @@ impl Visualizable for HCasCartesianGui {
                     ui.end_row();
                 }
 
+                let mut size = (0.0, 0.0);
+
                 // add inputs for the input ranges
                 for (k, v) in &mut self.input_ranges {
                     let unit = &format!(" {}", k.get_message().unwrap());
@@ -189,7 +196,7 @@ impl Visualizable for HCasCartesianGui {
                     ui.label(format!("{name} range [{unit}]"))
                         .on_hover_text(tooltip);
 
-                    let size = (
+                    size = (
                         ui.available_width() / 2.0 - ui.spacing().button_padding.x,
                         ui.spacing().interact_size.y,
                     );
@@ -220,13 +227,7 @@ impl Visualizable for HCasCartesianGui {
                     ui.label(format!("Output {i} Color"));
 
                     ui.horizontal_wrapped(|ui| {
-                        let size = (
-                            ui.available_width() / 2.0 - ui.spacing().button_padding.x,
-                            ui.spacing().interact_size.y,
-                        );
-
                         ui.spacing_mut().interact_size.x = size.0;
-
                         ui.color_edit_button_srgba(color);
                         if ui.button("reset").clicked() {
                             *color = Self::DEFAULT_COLORS[i];
@@ -234,6 +235,27 @@ impl Visualizable for HCasCartesianGui {
                     });
                     ui.end_row();
                 }
+
+                ui.spacing_mut().interact_size.x = size.0;
+
+                // min and max level
+                let level_speed = 1e-2;
+                ui.label("Min level")
+                    .on_hover_text("The start resolution of the plot.");
+                ui.add(
+                    DragValue::new(&mut self.min_level)
+                        .clamp_range(1..=self.max_level)
+                        .speed(level_speed),
+                );
+
+                ui.end_row();
+                ui.label("Max level")
+                    .on_hover_text("The maximum resolution of the plot");
+                ui.add(
+                    DragValue::new(&mut self.max_level)
+                        .clamp_range(self.min_level..=12)
+                        .speed(level_speed),
+                ); // TODO change this limit
             });
     }
 
@@ -272,8 +294,8 @@ impl Visualizable for HCasCartesianGui {
             output_variants,
             x_axis_range,
             y_axis_range,
-            min_levels: 0,  // TODO add ui for this
-            max_levels: 14, // TODO add ui for this
+            min_levels: self.min_level, // TODO make name consistent
+            max_levels: self.max_level, // TODO make name consistent
         }
     }
 }
@@ -392,12 +414,32 @@ impl epi::App for TemplateApp {
             viewer.draw_config(ui);
         });
 
+        // show progressbar
+        match self.backend.get_status() {
+            Some(((done, minimum_required), additional)) => {
+                let progress = done as f32 / (minimum_required + additional) as f32;
+                egui::TopBottomPanel::bottom("my_panel").show(ctx, |ui| {
+                    ui.add(
+                        ProgressBar::new(progress)
+                            .text(format!("{done} done, at least {minimum_required} required")),
+                    );
+                });
+            }
+            _ => {}
+        }
+
         egui::CentralPanel::default().show(ctx, |ui| {
             let new_viewer_config = viewer.get_viewer_config();
             let texture_handle = self.texture_handle.get_or_insert(ctx.load_texture(
                 "plot",
-                ColorImage::new([1000, 1000], Color32::GREEN), //new_viewer_config.output_variants[0].1),
+                ColorImage::new([1, 1], new_viewer_config.output_variants[0].1),
             ));
+
+            let (x_min, x_max) = new_viewer_config.x_axis_range.clone().into_inner();
+            let (y_min, y_max) = new_viewer_config.y_axis_range.clone().into_inner();
+
+            let center = Value::new((x_min + x_max) / 2.0, (y_min + y_max) / 2.0);
+            let size = [x_max - x_min, y_max - y_min];
 
             let new_viewer_config = Some(new_viewer_config);
 
@@ -410,59 +452,11 @@ impl epi::App for TemplateApp {
                 self.last_viewer_config = new_viewer_config;
             }
 
-            /*
-                        match self.last_viewer_config {
-                            // the viewer config changed, so it's time to flush the backends cache
-                            Some(ref last_viewer_config) if last_viewer_config != &new_viewer_config => {
-                                panic!();
-                                self.backend.start_with(
-                                    viewer.get_viewer_config(),
-                                    texture_handle.clone(),
-                                    viewer.get_fn(),
-                                );
-                            }
-                            _ => {}
-                        }
-            */
-
-            let plot_image = PlotImage::new(texture_handle.id(), Value::new(0.0, 0.0), [1e3, 1e3]);
+            let plot_image = PlotImage::new(texture_handle.id(), center, size);
 
             Plot::new("my_plot")
                 .data_aspect(1.0)
                 .show(ui, |plot_ui| plot_ui.image(plot_image));
-
-            /*
-            let polygons = match viewer_key.as_str() {
-                "HCAS" => current_viewer.get_points(
-                    |x, y, c| {
-                        let mut config = c.clone();
-                        let mut cas = opencas::HCas {
-                            last_advisory: config.previous_output.try_into().unwrap(),
-                        };
-
-                        *config.input_values.get_mut(&config.x_axis_key).unwrap() = x;
-                        *config.input_values.get_mut(&config.y_axis_key).unwrap() = y;
-
-                        let tau = Time::new::<second>(*config.input_values.get("τ").unwrap());
-                        let forward =
-                            Length::new::<foot>(*config.input_values.get("forward").unwrap());
-                        let left = Length::new::<foot>(*config.input_values.get("left").unwrap());
-                        let psi = Angle::new::<radian>(*config.input_values.get("ψ").unwrap());
-                        cas.process_cartesian(tau, forward, left, psi).0 as u8
-                    },
-                    0.0..=56e3,
-                    -23e3..=23e3,
-                ),
-                _ => {
-                    vec![]
-                }
-            };
-            Plot::new("my_plot").data_aspect(1.0).show(ui, |plot_ui| {
-                for p in polygons.into_iter() {
-                    plot_ui.polygon(p);
-                }
-            });
-            */
         });
     }
 }
