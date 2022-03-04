@@ -1,27 +1,18 @@
-use eframe::egui::{DragValue, ProgressBar};
-use eframe::epaint::{ColorImage, TextureHandle};
-use std::collections::HashMap;
-use std::hash::Hash;
-use std::ops::RangeInclusive;
-
-use eframe::egui::plot::PlotImage;
+use std::{collections::BTreeMap, hash::Hash, ops::RangeInclusive};
 
 use eframe::{
     egui::{
         self,
-        plot::{Plot, Value},
-        Color32,
+        plot::{Plot, PlotImage, Value},
+        Color32, DragValue, ProgressBar,
     },
+    epaint::{ColorImage, TextureHandle},
     epi,
 };
 
-use uom::si::angle::radian;
-use uom::si::f32::*;
-use uom::si::length::foot;
-use uom::si::time::second;
+use uom::si::{angle::radian, f32::*, length::foot, time::second};
 
-use strum::EnumMessage;
-use strum::IntoEnumIterator;
+use strum::{EnumIter, EnumMessage, IntoEnumIterator};
 
 mod visualize;
 use visualize::VisualizerBackend;
@@ -30,8 +21,8 @@ pub struct HCasCartesianGui {
     x_axis_key: HCasInput,
     y_axis_key: HCasInput,
     output_colors: Vec<Color32>,
-    input_ranges: HashMap<HCasInput, RangeInclusive<f32>>,
-    inputs: HashMap<HCasInput, f32>,
+    input_ranges: BTreeMap<HCasInput, RangeInclusive<f32>>,
+    inputs: BTreeMap<HCasInput, f32>,
     pra: u8,
     min_level: usize,
     max_level: usize,
@@ -48,19 +39,7 @@ impl HCasCartesianGui {
     const OUTPUTS: [&'static str; Self::N_OUTPUTS] = ["CoC", "WL", "WR", "SL", "SR"];
 }
 
-#[derive(
-    Debug,
-    Copy,
-    Clone,
-    PartialEq,
-    Eq,
-    Hash,
-    strum::EnumString,
-    strum::EnumIter,
-    strum::Display,
-    strum::AsRefStr,
-    strum::EnumMessage,
-)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, EnumIter, EnumMessage)]
 pub enum HCasInput {
     /// estimated time to impact
     #[strum(message = "s", detailed_message = "τ")]
@@ -89,7 +68,7 @@ impl Default for HCasCartesianGui {
                 (HCasInput::Tau, 0.0..=60.0),
                 (HCasInput::X, 0.0..=56e3),
                 (HCasInput::Y, -23e3..=23e3),
-                (HCasInput::IntruderBearing, angle_range.clone()),
+                (HCasInput::IntruderBearing, angle_range),
             ]
             .into_iter()
             .collect(),
@@ -97,7 +76,7 @@ impl Default for HCasCartesianGui {
                 (HCasInput::Tau, 15.0),
                 (HCasInput::X, 0.0),
                 (HCasInput::Y, 0.0),
-                (HCasInput::IntruderBearing, 330.0),
+                (HCasInput::IntruderBearing, 0.1),
             ]
             .into_iter()
             .collect(),
@@ -205,14 +184,14 @@ impl Visualizable for HCasCartesianGui {
                     ui.horizontal_wrapped(|ui| {
                         ui.add_sized(
                             size,
-                            egui::DragValue::new(&mut min)
+                            DragValue::new(&mut min)
                                 .clamp_range(f32::MIN..=max)
                                 .speed(drag_value_speed),
                         );
                         ui.with_layout(egui::Layout::right_to_left(), |ui| {
                             ui.add_sized(
                                 size,
-                                egui::DragValue::new(&mut max)
+                                DragValue::new(&mut max)
                                     .clamp_range(min..=f32::MAX)
                                     .speed(drag_value_speed),
                             );
@@ -336,7 +315,7 @@ pub struct ViewerConfig {
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
 pub struct TemplateApp {
-    viewers: HashMap<String, Box<dyn Visualizable>>,
+    viewers: BTreeMap<String, Box<dyn Visualizable>>,
     viewer_key: String,
     last_viewer_config: Option<ViewerConfig>,
     backend: VisualizerBackend,
@@ -345,7 +324,7 @@ pub struct TemplateApp {
 
 impl Default for TemplateApp {
     fn default() -> Self {
-        let viewers: HashMap<String, Box<dyn Visualizable>> = [(
+        let viewers: BTreeMap<String, Box<dyn Visualizable>> = [(
             "HCAS Cartesian".into(),
             Box::new(HCasCartesianGui::default()) as _,
         )]
@@ -394,13 +373,20 @@ impl epi::App for TemplateApp {
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, _frame: &epi::Frame) {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            // The top panel is often a good place for a menu bar:
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("Choose Viewee", |ui| {
                     for k in self.viewers.keys() {
                         if ui.button(k).clicked() {
                             self.viewer_key = k.into();
                         }
+                    }
+                });
+                ui.menu_button("Theme", |ui| {
+                    if ui.button("Dark").clicked() {
+                        ctx.set_visuals(egui::Visuals::dark());
+                    }
+                    if ui.button("Light").clicked() {
+                        ctx.set_visuals(egui::Visuals::light());
                     }
                 });
             });
@@ -415,17 +401,14 @@ impl epi::App for TemplateApp {
         });
 
         // show progressbar
-        match self.backend.get_status() {
-            Some(((done, minimum_required), additional)) => {
-                let progress = done as f32 / (minimum_required + additional) as f32;
-                egui::TopBottomPanel::bottom("my_panel").show(ctx, |ui| {
-                    ui.add(
-                        ProgressBar::new(progress)
-                            .text(format!("{done} done, at least {minimum_required} required")),
-                    );
-                });
-            }
-            _ => {}
+        if let Some(((done, minimum_required), additional)) = self.backend.get_status() {
+            let progress = done as f32 / (minimum_required + additional) as f32;
+            egui::TopBottomPanel::bottom("my_panel").show(ctx, |ui| {
+                ui.add(
+                    ProgressBar::new(progress)
+                        .text(format!("{done} done, at least {minimum_required} required")),
+                );
+            });
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
