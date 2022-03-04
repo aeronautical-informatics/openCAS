@@ -1,16 +1,15 @@
-use arc_swap::ArcSwap;
-use atomic_counter::{AtomicCounter, RelaxedCounter};
+use eframe::epaint::{ColorImage, TextureHandle};
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::ops::{Bound, RangeInclusive};
-use std::sync::{Arc, RwLock};
+use std::ops::RangeInclusive;
 
-use eframe::egui::plot::{MarkerShape, Points, Polygon, Text};
+use eframe::egui::plot::PlotImage;
+
 use eframe::{
     egui::{
         self,
-        plot::{Line, Plot, Value, Values},
-        Color32, DragValue,
+        plot::{Plot, Value},
+        Color32,
     },
     epi,
 };
@@ -22,6 +21,9 @@ use uom::si::time::second;
 
 use strum::EnumMessage;
 use strum::IntoEnumIterator;
+
+mod visualize;
+use visualize::VisualizerBackend;
 
 pub struct HCasCartesianGui {
     x_axis_key: HCasInput,
@@ -238,7 +240,7 @@ impl Visualizable for HCasCartesianGui {
     fn get_fn(&self) -> ViewerFn {
         use HCasInput::*;
         let last_adv = self.pra.try_into().unwrap();
-        let mut inputs = self.inputs.clone();
+        let inputs = self.inputs.clone();
         let x_axis_key = self.x_axis_key;
         let y_axis_key = self.y_axis_key;
 
@@ -246,6 +248,7 @@ impl Visualizable for HCasCartesianGui {
             let mut cas = opencas::HCas {
                 last_advisory: last_adv,
             };
+            let mut inputs = inputs.clone();
             *inputs.get_mut(&x_axis_key).unwrap() = x;
             *inputs.get_mut(&y_axis_key).unwrap() = y;
 
@@ -257,16 +260,11 @@ impl Visualizable for HCasCartesianGui {
         })
     }
 
-    fn draw_plot(&mut self, ui: &mut egui::Ui) {
-        todo!();
-    }
-
     fn get_viewer_config(&self) -> ViewerConfig {
         let output_variants = Self::OUTPUTS
             .iter()
             .zip(self.output_colors.iter())
-            .enumerate()
-            .map(|(i, (n, c))| (i as u8, (n.to_string(), *c)))
+            .map(|(n, c)| (n.to_string(), *c))
             .collect();
         let x_axis_range = self.input_ranges.get(&self.x_axis_key).unwrap().clone();
         let y_axis_range = self.input_ranges.get(&self.y_axis_key).unwrap().clone();
@@ -280,14 +278,11 @@ impl Visualizable for HCasCartesianGui {
     }
 }
 
-type ViewerFn = Box<dyn FnMut(f32, f32) -> u8 + Send + Sync>;
+type ViewerFn = Box<dyn Fn(f32, f32) -> u8 + Send + Sync>;
 
 trait Visualizable {
     /// draw the config panel for this visualizable
     fn draw_config(&mut self, ui: &mut egui::Ui);
-
-    /// draw the actual thing
-    fn draw_plot(&mut self, ui: &mut egui::Ui);
 
     /// Get the function used to color the texture by the visualizer
     fn get_fn(&self) -> ViewerFn;
@@ -300,7 +295,7 @@ trait Visualizable {
 pub struct ViewerConfig {
     /// the output value -> Color mapping
     /// For the example of the H-CAS, this is fife: CoC, WL, WR, SL, SR
-    pub output_variants: HashMap<u8, (String, Color32)>,
+    pub output_variants: Vec<(String, Color32)>,
 
     /// From where to where to render on the x-axis
     pub x_axis_range: RangeInclusive<f32>,
@@ -315,28 +310,15 @@ pub struct ViewerConfig {
     pub max_levels: usize,
 }
 
-#[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
-pub struct AdvisoryViewer {
-    pub conf: ViewerConfig,
-    // TODO Insert whatever you need to cache the quadtree
-    // Remember to annotate it with
-    // #[cfg_attr(feature = "persistence", serde(skip))]
-    //#[cfg_attr(feature = "persistence", serde(skip))]
-    //visualizer_tree: Arc<ArcSwap<VisualizerNode>>,
-    #[cfg_attr(feature = "persistence", serde(skip))]
-    config_hash: Arc<RwLock<u64>>,
-    #[cfg_attr(feature = "persistence", serde(skip))]
-    min_level_counter: Arc<RelaxedCounter>,
-    #[cfg_attr(feature = "persistence", serde(skip))]
-    additional_quad_counter: Arc<RelaxedCounter>,
-}
-
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
 pub struct TemplateApp {
     viewers: HashMap<String, Box<dyn Visualizable>>,
     viewer_key: String,
+    last_viewer_config: Option<ViewerConfig>,
+    backend: VisualizerBackend,
+    texture_handle: Option<TextureHandle>,
 }
 
 impl Default for TemplateApp {
@@ -352,6 +334,9 @@ impl Default for TemplateApp {
         Self {
             viewers,
             viewer_key,
+            backend: Default::default(),
+            last_viewer_config: None,
+            texture_handle: None,
         }
     }
 }
@@ -385,7 +370,7 @@ impl epi::App for TemplateApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
-    fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &epi::Frame) {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             // The top panel is often a good place for a menu bar:
             egui::menu::bar(ui, |ui| {
@@ -408,14 +393,43 @@ impl epi::App for TemplateApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            let sin = (0..1000).map(|i| {
-                let x = i as f64 * 0.01;
-                Value::new(x, x.sin())
-            });
-            let line = Line::new(Values::from_values_iter(sin));
+            let new_viewer_config = viewer.get_viewer_config();
+            let texture_handle = self.texture_handle.get_or_insert(ctx.load_texture(
+                "plot",
+                ColorImage::new([1000, 1000], Color32::GREEN), //new_viewer_config.output_variants[0].1),
+            ));
+
+            let new_viewer_config = Some(new_viewer_config);
+
+            if self.last_viewer_config != new_viewer_config {
+                self.backend.start_with(
+                    viewer.get_viewer_config(),
+                    texture_handle.clone(),
+                    viewer.get_fn(),
+                );
+                self.last_viewer_config = new_viewer_config;
+            }
+
+            /*
+                        match self.last_viewer_config {
+                            // the viewer config changed, so it's time to flush the backends cache
+                            Some(ref last_viewer_config) if last_viewer_config != &new_viewer_config => {
+                                panic!();
+                                self.backend.start_with(
+                                    viewer.get_viewer_config(),
+                                    texture_handle.clone(),
+                                    viewer.get_fn(),
+                                );
+                            }
+                            _ => {}
+                        }
+            */
+
+            let plot_image = PlotImage::new(texture_handle.id(), Value::new(0.0, 0.0), [1e3, 1e3]);
+
             Plot::new("my_plot")
                 .data_aspect(1.0)
-                .show(ui, |plot_ui| plot_ui.line(line));
+                .show(ui, |plot_ui| plot_ui.image(plot_image));
 
             /*
             let polygons = match viewer_key.as_str() {

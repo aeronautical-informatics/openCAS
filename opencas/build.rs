@@ -172,8 +172,7 @@ fn hcas_nnets() -> TokenStream {
     let format_name = |pra, tau| format!("HCAS_rect_v6_pra{pra}_tau{tau:02}_25HU_3000.nnet");
     let required_nnets = pra_values
         .iter()
-        .map(|pra| tau_values.iter().map(move |tau| format_name(pra, tau)))
-        .flatten();
+        .flat_map(|pra| tau_values.iter().map(move |tau| format_name(pra, tau)));
 
     let (parsed_nnets, parsed_nnet_types): (Vec<TokenStream>, Vec<TokenStream>) = required_nnets
         .map(|n| parse_nnet(PathBuf::from("nnets").join(n)))
