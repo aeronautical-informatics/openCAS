@@ -26,9 +26,21 @@ use strum::IntoEnumIterator;
 pub struct HCasCartesianGui {
     x_axis_key: HCasInput,
     y_axis_key: HCasInput,
+    output_colors: Vec<Color32>,
     input_ranges: HashMap<HCasInput, RangeInclusive<f32>>,
     inputs: HashMap<HCasInput, f32>,
     pra: u8,
+}
+impl HCasCartesianGui {
+    const N_OUTPUTS: usize = 5;
+    const DEFAULT_COLORS: [Color32; Self::N_OUTPUTS] = [
+        Color32::TRANSPARENT,
+        Color32::LIGHT_RED,
+        Color32::LIGHT_GREEN,
+        Color32::RED,
+        Color32::GREEN,
+    ];
+    const OUTPUTS: [&'static str; Self::N_OUTPUTS] = ["CoC", "WL", "WR", "SL", "SR"];
 }
 
 #[derive(
@@ -85,6 +97,7 @@ impl Default for HCasCartesianGui {
             .into_iter()
             .collect(),
             pra: 0,
+            output_colors: Self::DEFAULT_COLORS.into_iter().collect(),
         };
 
         assert_eq!(HCasInput::iter().len(), new_self.input_ranges.len());
@@ -101,35 +114,50 @@ impl Visualizable for HCasCartesianGui {
             .striped(true)
             .show(ui, |ui| {
                 ui.label("X-Axis Selector");
+
+                // calculate the maximum width for the combo boxes
+                let original_spacing = ui.spacing().clone();
+                ui.spacing_mut().slider_width =
+                    ui.available_width() - 2.0 * original_spacing.button_padding.x;
                 egui::ComboBox::from_id_source("x_axis_combo")
-                    .selected_text(self.x_axis_key.as_ref())
+                    .selected_text(self.x_axis_key.get_detailed_message().unwrap())
                     .show_ui(ui, |ui| {
                         for value in HCasInput::iter() {
-                            ui.selectable_value(&mut self.x_axis_key, value, value.as_ref());
+                            ui.selectable_value(
+                                &mut self.x_axis_key,
+                                value,
+                                value.get_detailed_message().unwrap(),
+                            );
                         }
                     });
                 ui.end_row();
 
                 ui.label("Y-Axis Selector");
                 egui::ComboBox::from_id_source("y_axis_combo")
-                    .selected_text(self.y_axis_key.as_ref())
+                    .selected_text(self.y_axis_key.get_detailed_message().unwrap())
                     .show_ui(ui, |ui| {
                         for value in HCasInput::iter() {
-                            ui.selectable_value(&mut self.y_axis_key, value, value.as_ref());
+                            ui.selectable_value(
+                                &mut self.y_axis_key,
+                                value,
+                                value.get_detailed_message().unwrap(),
+                            );
                         }
                     });
                 ui.end_row();
 
                 ui.label("Previous Advice");
-                let advisories = ["CoC", "WL", "WR", "SL", "SR"];
                 egui::ComboBox::from_id_source("previous_advice_combo")
-                    .selected_text(advisories[self.pra as usize])
+                    .selected_text(Self::OUTPUTS[self.pra as usize])
                     .show_ui(ui, |ui| {
-                        for (i, adv) in advisories.iter().enumerate() {
+                        for (i, adv) in Self::OUTPUTS.iter().enumerate() {
                             ui.selectable_value(&mut self.pra, i as u8, *adv);
                         }
                     });
                 ui.end_row();
+
+                // reset width, since the combination of slider and drag value doesn't behave
+                *ui.spacing_mut() = original_spacing;
 
                 // add inputs for the actual input values
                 for (k, v) in &mut self.inputs {
@@ -138,16 +166,11 @@ impl Visualizable for HCasCartesianGui {
                     let tooltip = k.get_documentation().unwrap();
 
                     let value_range = self.input_ranges.get(k).unwrap();
-                    let suffix = if *k == self.x_axis_key || *k == self.y_axis_key {
-                        "[inactive]"
-                    } else {
-                        ""
-                    };
-                    ui.label(format!("{name} {suffix}")).on_hover_text(tooltip);
-                    ui.add(
-                        egui::Slider::new(v, value_range.clone())
-                            .suffix(unit)
-                            .show_value(true),
+
+                    ui.label(format!("{name} [{unit}]")).on_hover_text(tooltip);
+                    ui.add_enabled(
+                        *k != self.x_axis_key && *k != self.y_axis_key,
+                        egui::Slider::new(v, value_range.clone()).show_value(true),
                     );
                     ui.end_row();
                 }
@@ -156,14 +179,15 @@ impl Visualizable for HCasCartesianGui {
                 for (k, v) in &mut self.input_ranges {
                     let unit = &format!(" {}", k.get_message().unwrap());
                     let name = k.get_detailed_message().unwrap();
-                    let _tooltip = k.get_documentation().unwrap();
+                    let tooltip = k.get_documentation().unwrap();
 
                     let (mut min, mut max) = v.clone().into_inner();
                     let drag_value_speed = 1e-2;
 
-                    ui.label(format!("{name} range"));
+                    ui.label(format!("{name} range [{unit}]"))
+                        .on_hover_text(tooltip);
 
-                    let drag_value_size = (
+                    let size = (
                         ui.available_width() / 2.0 - ui.spacing().button_padding.x,
                         ui.spacing().interact_size.y,
                     );
@@ -171,17 +195,15 @@ impl Visualizable for HCasCartesianGui {
                     // the same row.
                     ui.horizontal_wrapped(|ui| {
                         ui.add_sized(
-                            drag_value_size,
+                            size,
                             egui::DragValue::new(&mut min)
-                                .suffix(unit)
                                 .clamp_range(f32::MIN..=max)
                                 .speed(drag_value_speed),
                         );
                         ui.with_layout(egui::Layout::right_to_left(), |ui| {
                             ui.add_sized(
-                                drag_value_size,
+                                size,
                                 egui::DragValue::new(&mut max)
-                                    .suffix(unit)
                                     .clamp_range(min..=f32::MAX)
                                     .speed(drag_value_speed),
                             );
@@ -189,6 +211,26 @@ impl Visualizable for HCasCartesianGui {
                     });
                     ui.end_row();
                     *v = min..=max;
+                }
+
+                // add inputs for the colors
+                for (i, color) in self.output_colors.iter_mut().enumerate() {
+                    ui.label(format!("Output {i} Color"));
+
+                    ui.horizontal_wrapped(|ui| {
+                        let size = (
+                            ui.available_width() / 2.0 - ui.spacing().button_padding.x,
+                            ui.spacing().interact_size.y,
+                        );
+
+                        ui.spacing_mut().interact_size.x = size.0;
+
+                        ui.color_edit_button_srgba(color);
+                        if ui.button("reset").clicked() {
+                            *color = Self::DEFAULT_COLORS[i];
+                        }
+                    });
+                    ui.end_row();
                 }
             });
     }
@@ -216,11 +258,25 @@ impl Visualizable for HCasCartesianGui {
     }
 
     fn draw_plot(&mut self, ui: &mut egui::Ui) {
-        todo!()
+        todo!();
     }
 
     fn get_viewer_config(&self) -> ViewerConfig {
-        todo!()
+        let output_variants = Self::OUTPUTS
+            .iter()
+            .zip(self.output_colors.iter())
+            .enumerate()
+            .map(|(i, (n, c))| (i as u8, (n.to_string(), *c)))
+            .collect();
+        let x_axis_range = self.input_ranges.get(&self.x_axis_key).unwrap().clone();
+        let y_axis_range = self.input_ranges.get(&self.y_axis_key).unwrap().clone();
+        ViewerConfig {
+            output_variants,
+            x_axis_range,
+            y_axis_range,
+            min_levels: 0,  // TODO add ui for this
+            max_levels: 14, // TODO add ui for this
+        }
     }
 }
 
