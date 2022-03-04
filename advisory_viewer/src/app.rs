@@ -4,14 +4,14 @@ use std::collections::HashMap;
 use std::ops::RangeInclusive;
 use std::sync::{Arc, RwLock};
 
-use eframe::epi;
-use eframe::egui::plot::PlotImage;
 use eframe::egui;
+use eframe::egui::plot::PlotImage;
 use eframe::egui::{
     plot::{Plot, Value},
     Color32, DragValue,
 };
 use eframe::egui::{ColorImage, Vec2};
+use eframe::epi;
 
 use crate::app::visualize::VisualizerNode;
 
@@ -136,7 +136,7 @@ impl epi::App for TemplateApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
-    fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &epi::Frame) {
         let Self {
             ref mut viewers,
             ref mut viewer_key,
@@ -226,7 +226,10 @@ impl epi::App for TemplateApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             let length = 2usize.pow(current_viewer.conf.max_levels as u32);
-            let texture = ctx.load_texture("Advisory", ColorImage::new([length; 2], Color32::TRANSPARENT));
+            let texture = ctx.load_texture(
+                "Advisory",
+                ColorImage::new([length; 2], Color32::TRANSPARENT),
+            );
             //let texture = match viewer_key.as_str() {
             //    "HCAS" => current_viewer.get_texture(
             //        |x, y, c| {
