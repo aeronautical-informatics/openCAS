@@ -94,7 +94,9 @@ impl Default for HCasCartesianGui {
 }
 
 impl Visualizable for HCasCartesianGui {
-    fn draw_config(&mut self, ui: &mut egui::Ui) {
+    fn draw_config(&mut self, ui: &mut egui::Ui) -> bool {
+        let old_pra = self.pra;
+        let old_inputs = self.inputs.clone();
         egui::Grid::new("hcas_gui_settings_grid")
             .num_columns(2)
             .striped(true)
@@ -236,6 +238,9 @@ impl Visualizable for HCasCartesianGui {
                         .speed(level_speed),
                 ); // TODO change this limit
             });
+
+        // redraw, if
+        self.pra != old_pra || self.inputs != old_inputs
     }
 
     fn get_fn(&self) -> ViewerFn {
@@ -283,7 +288,8 @@ type ViewerFn = Box<dyn Fn(f32, f32) -> u8 + Send + Sync>;
 
 trait Visualizable {
     /// draw the config panel for this visualizable
-    fn draw_config(&mut self, ui: &mut egui::Ui);
+    /// returns true, if a significant value changed
+    fn draw_config(&mut self, ui: &mut egui::Ui) -> bool;
 
     /// Get the function used to color the texture by the visualizer
     fn get_fn(&self) -> ViewerFn;
@@ -397,7 +403,9 @@ impl epi::App for TemplateApp {
 
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
             ui.heading(format!("Settings for {viewer_key}"));
-            viewer.draw_config(ui);
+            if viewer.draw_config(ui) {
+                self.last_viewer_config = None;
+            };
         });
 
         // show progressbar
