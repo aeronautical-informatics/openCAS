@@ -162,13 +162,13 @@ impl Visualizable for HCasCartesianGui {
 
                 // add inputs for the actual input values
                 for (k, v) in &mut self.inputs {
-                    let unit = &format!(" {}", k.get_message().unwrap());
+                    let unit = &format!("[{}]", k.get_message().unwrap());
                     let name = k.get_detailed_message().unwrap();
                     let tooltip = k.get_documentation().unwrap();
 
                     let value_range = self.input_ranges.get(k).unwrap();
 
-                    ui.label(format!("{name} [{unit}]")).on_hover_text(tooltip);
+                    ui.label(format!("{name} {unit}")).on_hover_text(tooltip);
                     ui.add_enabled(
                         *k != self.x_axis_key && *k != self.y_axis_key,
                         egui::Slider::new(v, value_range.clone()).show_value(true),
@@ -180,14 +180,14 @@ impl Visualizable for HCasCartesianGui {
 
                 // add inputs for the input ranges
                 for (k, v) in &mut self.input_ranges {
-                    let unit = &format!(" {}", k.get_message().unwrap());
+                    let unit = &format!("[{}]", k.get_message().unwrap());
                     let name = k.get_detailed_message().unwrap();
                     let tooltip = k.get_documentation().unwrap();
 
                     let (mut min, mut max) = v.clone().into_inner();
                     let drag_value_speed = 1e-2;
 
-                    ui.label(format!("{name} range [{unit}]"))
+                    ui.label(format!("{name} range {unit}"))
                         .on_hover_text(tooltip);
 
                     size = (
@@ -427,12 +427,37 @@ impl epi::App for TemplateApp {
 
         // show progressbar
         if let Some(((done, minimum_required), additional)) = self.backend.get_status() {
+            let ViewerConfig {
+                min_levels,
+                max_levels,
+                ..
+            } = viewer.get_viewer_config();
+            let initial_quads = 4f32.powi(min_levels as i32);
+            let current_level = 8;
+            let quads_evaluated = done;
+
+            // repaint until all levels are done
+            if current_level != max_levels {
+                ctx.request_repaint();
+            }
+
             let progress = done as f32 / minimum_required as f32;
             egui::TopBottomPanel::bottom("my_panel").show(ctx, |ui| {
-                ui.add(
-                    ProgressBar::new(progress)
-                        .text(format!("{done} done, at least {minimum_required} required")),
-                );
+                let text = match current_level {
+                    x if (0..=min_levels).contains(&x) => {
+                        format!(
+                            "calculating initial grid {:3.0} %",
+                            quads_evaluated as f32 / initial_quads * 100.0
+                        )
+                    }
+                    x if (min_levels..max_levels).contains(&x) => {
+                        format!("refining the grid {current_level}/{max_levels}")
+                    }
+                    _ => {
+                        format!("Done, {quads_evaluated} quads drawn in total")
+                    }
+                };
+                ui.add(ProgressBar::new(progress).text(text).animate(true) );
             });
         }
 
@@ -453,7 +478,7 @@ impl epi::App for TemplateApp {
             let new_viewer_config = Some(new_viewer_config);
 
             if self.last_viewer_config != new_viewer_config {
-                *texture_handle = ctx.load_texture("plot", ColorImage::new([1, 1], default_color));
+                // *texture_handle = ctx.load_texture("plot", ColorImage::new([1, 1], default_color));
                 self.backend.start_with(
                     viewer.get_viewer_config(),
                     texture_handle.clone(),

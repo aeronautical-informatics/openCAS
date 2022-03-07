@@ -10,9 +10,9 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-eframe = { version = "0.17", features = [ "persistence" ] }
+egui = { features = [ "multi_threaded" ], git = "https://github.com/wucke13/egui", branch = "dev/wucke13" }
+eframe = { features = [ "persistence" ], git = "https://github.com/wucke13/egui", branch = "dev/wucke13" }
 ndarray = { version = "0.15", features = [ "rayon" ] }
-egui = { version = "0.17", features = [ "multi_threaded" ] }
 opencas = { path = "../opencas" }
 uuid = { version = "0.8", features = [ "v4" ] }
 uom = "*"
