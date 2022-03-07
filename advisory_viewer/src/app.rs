@@ -10,6 +10,7 @@ use eframe::{
     epi,
 };
 
+use serde::{Deserialize, Serialize};
 use uom::si::{angle::radian, f32::*, length::foot, time::second};
 
 use strum::{EnumIter, EnumMessage, IntoEnumIterator};
@@ -17,6 +18,7 @@ use strum::{EnumIter, EnumMessage, IntoEnumIterator};
 mod visualize;
 use visualize::VisualizerBackend;
 
+#[derive(Deserialize, Serialize)]
 pub struct HCasCartesianGui {
     x_axis_key: HCasInput,
     y_axis_key: HCasInput,
@@ -39,7 +41,20 @@ impl HCasCartesianGui {
     const OUTPUTS: [&'static str; Self::N_OUTPUTS] = ["CoC", "WL", "WR", "SL", "SR"];
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, EnumIter, EnumMessage)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    EnumIter,
+    EnumMessage,
+    Deserialize,
+    Serialize,
+)]
 pub enum HCasInput {
     /// estimated time to impact
     #[strum(message = "s", detailed_message = "τ")]
@@ -298,7 +313,6 @@ trait Visualizable {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
 pub struct ViewerConfig {
     /// the output value -> Color mapping
     /// For the example of the H-CAS, this is fife: CoC, WL, WR, SL, SR
@@ -318,13 +332,21 @@ pub struct ViewerConfig {
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
-#[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
-#[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
+#[derive(Deserialize, Serialize)]
+#[serde(default)]
 pub struct TemplateApp {
+    #[serde(skip)]
     viewers: BTreeMap<String, Box<dyn Visualizable>>,
+
     viewer_key: String,
+
+    #[serde(skip)]
     last_viewer_config: Option<ViewerConfig>,
+
+    #[serde(skip)]
     backend: VisualizerBackend,
+
+    #[serde(skip)]
     texture_handle: Option<TextureHandle>,
 }
 
@@ -361,16 +383,12 @@ impl epi::App for TemplateApp {
         _storage: Option<&dyn epi::Storage>,
     ) {
         // Load previous app state (if any).
-        // Note that you must enable the `persistence` feature for this to work.
-        #[cfg(feature = "persistence")]
         if let Some(storage) = _storage {
             *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default()
         }
     }
 
     /// Called by the frame work to save state before shutdown.
-    /// Note that you must enable the `persistence` feature for this to work.
-    #[cfg(feature = "persistence")]
     fn save(&mut self, storage: &mut dyn epi::Storage) {
         epi::set_value(storage, epi::APP_KEY, self);
     }

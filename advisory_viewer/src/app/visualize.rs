@@ -10,16 +10,11 @@ use rayon::prelude::*;
 
 use super::ViewerConfig;
 
-#[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
 pub struct VisualizerBackend {
     pub conf: Option<ViewerConfig>,
-    #[cfg_attr(feature = "persistence", serde(skip))]
     visualizer_tree: Arc<ArcSwap<VisualizerNode>>,
-    #[cfg_attr(feature = "persistence", serde(skip))]
     valid: ArcSwap<RwLock<bool>>,
-    #[cfg_attr(feature = "persistence", serde(skip))]
     min_level_counter: Arc<RelaxedCounter>,
-    #[cfg_attr(feature = "persistence", serde(skip))]
     additional_quad_counter: Arc<RelaxedCounter>,
 }
 
