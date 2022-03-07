@@ -5,9 +5,3 @@ members = [
     "opencas",
     "advisory_viewer",
 ]
-
-[profile.release]
-debug = false
-lto = true
-opt-level = "z"
-overflow-checks = false
