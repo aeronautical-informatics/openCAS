@@ -220,7 +220,8 @@ impl Visualizable for HCasCartesianGui {
 
                 // add inputs for the colors
                 for (i, color) in self.output_colors.iter_mut().enumerate() {
-                    ui.label(format!("Output {i} Color"));
+                    let output_name = Self::OUTPUTS[i];
+                    ui.label(format!(r#""{output_name}" Color"#));
 
                     ui.horizontal_wrapped(|ui| {
                         ui.spacing_mut().interact_size.x = size.0;
@@ -372,7 +373,7 @@ impl Default for TemplateApp {
 
 impl epi::App for TemplateApp {
     fn name(&self) -> &str {
-        "eframe template"
+        "Advisory Viewer"
     }
 
     /// Called once before the first frame.
