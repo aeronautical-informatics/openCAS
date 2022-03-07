@@ -439,20 +439,22 @@ impl epi::App for TemplateApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             let new_viewer_config = viewer.get_viewer_config();
-            let texture_handle = self.texture_handle.get_or_insert(ctx.load_texture(
-                "plot",
-                ColorImage::new([1, 1], new_viewer_config.output_variants[0].1),
-            ));
+            let default_color = new_viewer_config.output_variants[0].1;
+            let texture_handle = self
+                .texture_handle
+                .get_or_insert(ctx.load_texture("plot", ColorImage::new([1, 1], default_color)));
 
             let (x_min, x_max) = new_viewer_config.x_axis_range.clone().into_inner();
             let (y_min, y_max) = new_viewer_config.y_axis_range.clone().into_inner();
 
             let center = Value::new((x_min + x_max) / 2.0, (y_min + y_max) / 2.0);
             let size = [x_max - x_min, y_max - y_min];
+            let aspect_ratio = size[0] / size[1];
 
             let new_viewer_config = Some(new_viewer_config);
 
             if self.last_viewer_config != new_viewer_config {
+                *texture_handle = ctx.load_texture("plot", ColorImage::new([1, 1], default_color));
                 self.backend.start_with(
                     viewer.get_viewer_config(),
                     texture_handle.clone(),
@@ -464,7 +466,7 @@ impl epi::App for TemplateApp {
             let plot_image = PlotImage::new(texture_handle.id(), center, size);
 
             Plot::new("my_plot")
-                .data_aspect(1.0)
+                .data_aspect(aspect_ratio)
                 .show(ui, |plot_ui| plot_ui.image(plot_image));
         });
     }
