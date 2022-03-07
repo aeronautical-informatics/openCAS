@@ -1,19 +1,22 @@
 use arc_swap::ArcSwap;
 use atomic_counter::{AtomicCounter, RelaxedCounter};
-use std::ops::{Deref, Range, RangeInclusive};
+use std::borrow::BorrowMut;
+use std::ops::{Deref, DerefMut, Range, RangeInclusive};
 use std::sync::{Arc, RwLock};
 
-use eframe::egui::{Color32, ColorImage, TextureHandle};
+use egui::{Color32, ColorImage, TextureHandle};
 use ndarray::{Array2, ArrayViewMut2, Axis};
 
 use rayon::prelude::*;
+use uuid::Uuid;
 
 use super::ViewerConfig;
 
 pub struct VisualizerBackend {
-    pub conf: Option<ViewerConfig>,
-    visualizer_tree: Arc<ArcSwap<VisualizerNode>>,
-    valid: ArcSwap<RwLock<bool>>,
+    pub conf: ArcSwap<Option<ViewerConfig>>,
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    data: Arc<RwLock<(VisualizerNode, Array2<Color32>, Uuid)>>,
+    #[cfg_attr(feature = "persistence", serde(skip))]
     min_level_counter: Arc<RelaxedCounter>,
     additional_quad_counter: Arc<RelaxedCounter>,
 }
@@ -21,9 +24,12 @@ pub struct VisualizerBackend {
 impl Default for VisualizerBackend {
     fn default() -> Self {
         Self {
-            conf: None,
-            visualizer_tree: Arc::new(ArcSwap::new(Arc::new(VisualizerNode::default()))),
-            valid: Default::default(),
+            conf: Default::default(),
+            data: Arc::new(RwLock::new((
+                VisualizerNode::default(),
+                Array2::default((1, 1)),
+                Uuid::new_v4(),
+            ))),
             min_level_counter: Default::default(),
             additional_quad_counter: Default::default(),
         }
@@ -37,20 +43,26 @@ impl VisualizerBackend {
         mut texture: TextureHandle,
         f: Box<dyn Fn(f32, f32) -> u8 + Send + Sync>,
     ) {
-        let prev = self.valid.load_full();
-        let mut prev_lock = prev.write().unwrap();
-        let this = Arc::new(RwLock::new(true));
-        let this_lock = this.write().unwrap();
-        self.valid.store(this.clone());
-        *prev_lock = false;
-
+        let uuid = Uuid::new_v4();
+        let data = self.data.clone();
         let min_level_counter = self.min_level_counter.clone();
-        min_level_counter.reset();
         let additional_quad_counter = self.additional_quad_counter.clone();
-        additional_quad_counter.reset();
-        let side_length = 2usize.pow(config.max_levels as u32);
-        let tree = Arc::new(
-            VisualizerNode {
+        self.conf.store(Arc::new(Some(config.clone())));
+
+        std::thread::spawn(move || {
+            let mut lock = data.write().unwrap();
+            (*lock).2 = uuid;
+
+            min_level_counter.reset();
+            additional_quad_counter.reset();
+            let side_length = 2usize.pow(config.max_levels as u32);
+            drop(lock);
+
+            let check_data = data.clone();
+            let check_uuid = uuid;
+            let valid = move || check_data.read().unwrap().deref().2 == check_uuid;
+
+            let tree = VisualizerNode {
                 value: 0,
                 x_range: config.x_axis_range.clone(),
                 y_range: config.y_axis_range.clone(),
@@ -58,43 +70,69 @@ impl VisualizerBackend {
                 y_pixel_range: 0..side_length,
                 children: Default::default(),
             }
-            .gen_value(&f),
-        );
-        self.visualizer_tree.store(tree.clone());
+            .gen_value(&f);
 
-        drop(prev_lock);
-        drop(this_lock);
+            {
+                let mut lock = data.write().unwrap();
+                if lock.deref().2 != uuid {
+                    return;
+                }
+                lock.deref_mut().0 = tree.clone();
+                lock.deref_mut().1 = Array2::default((side_length, side_length));
+            }
 
-        let mut image_buffer: Array2<Color32> = Array2::default((side_length, side_length));
+            tree.gen_children_rec(&f, config.min_levels, &valid, &min_level_counter);
 
-        std::thread::spawn(move || {
-            tree.gen_children_rec(&f, config.min_levels, &this, &min_level_counter);
-            tree.fill_buffer(image_buffer.view_mut(), &config);
-            texture.set(ColorImage::from_rgba_unmultiplied(
-                [side_length, side_length],
-                &image_buffer
-                    .par_iter()
-                    .flat_map(|c| c.to_srgba_unmultiplied())
-                    .collect::<Vec<_>>(),
-            ));
+            {
+                let mut lock = data.write().unwrap();
+                if lock.deref().2 != uuid {
+                    return;
+                }
+                let buffer = (*lock).1.borrow_mut();
+                tree.fill_buffer(buffer.view_mut(), &config);
+                texture.set(ColorImage::from_rgba_unmultiplied(
+                    [side_length, side_length],
+                    &buffer
+                        .par_iter()
+                        .flat_map(|c| c.to_srgba_unmultiplied())
+                        .collect::<Vec<_>>(),
+                ));
+            }
 
             for level in 0..config.max_levels {
+                if !valid() {
+                    return;
+                }
                 tree.level_nodes(level)
                     .par_iter()
                     .filter(|n| n.children.load().is_none())
                     .filter(|n| !n.corners_are_identical(&f))
-                    .filter(|_| *this.read().unwrap())
                     .for_each(|n| {
                         n.gen_children(&f);
                         additional_quad_counter.add(4);
                     });
-                tree.fill_buffer(image_buffer.view_mut(), &config);
+                {
+                    let mut lock = data.write().unwrap();
+                    if lock.deref().2 != uuid {
+                        return;
+                    }
+                    let buffer = (*lock).1.borrow_mut();
+                    tree.fill_buffer(buffer.view_mut(), &config);
+
+                    texture.set(ColorImage::from_rgba_unmultiplied(
+                        [side_length, side_length],
+                        &buffer
+                            .par_iter()
+                            .flat_map(|c| c.to_srgba_unmultiplied())
+                            .collect::<Vec<_>>(),
+                    ));
+                }
             }
         });
     }
 
     pub fn get_status(&self) -> Option<((usize, usize), usize)> {
-        if let Some(conf) = &self.conf {
+        if let Some(conf) = self.conf.load_full().deref() {
             let min_quads_target = 2usize.pow(conf.min_levels as u32).pow(2);
             Some((
                 (self.min_level_counter.get(), min_quads_target),
@@ -163,22 +201,22 @@ impl VisualizerNode {
         &self,
         f: &(dyn Fn(f32, f32) -> u8 + Send + Sync),
         level: usize,
-        valid: &RwLock<bool>,
+        valid: &(dyn Fn() -> bool + Send + Sync),
         counter: &RelaxedCounter,
     ) {
         if level > 0 {
             self.gen_children(f);
             if let Some(mut c) = self.children.load_full().deref().clone() {
+                if !valid() {
+                    return;
+                }
                 c.par_iter_mut().for_each(|c| {
-                    if !*valid.read().unwrap() {
-                        return;
-                    }
                     c.gen_children_rec(f, level - 1, valid, counter);
                     c.simplify()
                 });
                 self.children.store(Arc::new(Some(c)));
             }
-        } else {
+        } else if valid() {
             counter.inc();
         }
     }
