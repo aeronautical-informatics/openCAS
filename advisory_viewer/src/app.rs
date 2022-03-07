@@ -1,13 +1,11 @@
 use std::{collections::BTreeMap, hash::Hash, ops::RangeInclusive};
 
-use eframe::{
-    egui::{
-        self,
-        plot::{Plot, PlotImage, Value},
-        Color32, DragValue, ProgressBar,
-    },
-    epaint::{ColorImage, TextureHandle},
-    epi,
+use eframe::epi;
+use egui::{
+    self,
+    plot::PlotImage,
+    plot::{Plot, Value},
+    Color32, ColorImage, DragValue, ProgressBar, TextureHandle,
 };
 
 use serde::{Deserialize, Serialize};
@@ -429,7 +427,7 @@ impl epi::App for TemplateApp {
 
         // show progressbar
         if let Some(((done, minimum_required), additional)) = self.backend.get_status() {
-            let progress = done as f32 / (minimum_required + additional) as f32;
+            let progress = done as f32 / minimum_required as f32;
             egui::TopBottomPanel::bottom("my_panel").show(ctx, |ui| {
                 ui.add(
                     ProgressBar::new(progress)

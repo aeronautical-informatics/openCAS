@@ -10,11 +10,11 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-#eframe = { version = "0.17.0", default-features = false, features = ["default_fonts", "egui_glium"] }# Gives us egui, epi and web+native backends
-eframe = { version = "0.17.0", features = [ "persistence" ] }
+eframe = { version = "0.17", features = [ "persistence" ] }
 ndarray = { version = "0.15", features = [ "rayon" ] }
-#egui = { version = "0.17.0", features = [ "multi_threaded" ] }# Gives us egui, epi and web+native backends
+egui = { version = "0.17", features = [ "multi_threaded" ] }
 opencas = { path = "../opencas" }
+uuid = { version = "0.8", features = [ "v4" ] }
 uom = "*"
 rayon = "1.5" #Gives easy to use parallelized iterators
 arc-swap = "1.5" #For atomic double buffers
