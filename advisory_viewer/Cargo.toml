@@ -12,11 +12,9 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 egui = { features = [ "multi_threaded" ], git = "https://github.com/wucke13/egui", branch = "dev/wucke13" }
 eframe = { features = [ "persistence" ], git = "https://github.com/wucke13/egui", branch = "dev/wucke13" }
-ndarray = { version = "0.15", features = [ "rayon" ] }
 opencas = { path = "../opencas" }
 uuid = { version = "0.8", features = [ "v4" ] }
 uom = "*"
-rayon = "1.5" #Gives easy to use parallelized iterators
 arc-swap = "1.5" #For atomic double buffers
 #kd-tree = "0.4" #KD Tree implementation for dynamic image calculation
 atomic-counter = "1.0" #Track progress of image generator

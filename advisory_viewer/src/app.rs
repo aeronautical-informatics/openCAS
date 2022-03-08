@@ -96,7 +96,7 @@ impl Default for HCasCartesianGui {
             pra: 0,
             output_colors: Self::DEFAULT_COLORS.into_iter().collect(),
             min_level: 5,
-            max_level: 9,
+            max_level: 10,
         };
 
         assert_eq!(HCasInput::iter().len(), new_self.input_ranges.len());
@@ -248,7 +248,7 @@ impl Visualizable for HCasCartesianGui {
                     .on_hover_text("The maximum resolution of the plot");
                 ui.add(
                     DragValue::new(&mut self.max_level)
-                        .clamp_range(self.min_level..=12)
+                        .clamp_range(self.min_level..=14)
                         .speed(level_speed),
                 ); // TODO change this limit
             });
@@ -426,40 +426,39 @@ impl epi::App for TemplateApp {
         });
 
         // show progressbar
-        if let Some(((done, minimum_required), additional)) = self.backend.get_status() {
-            let ViewerConfig {
-                min_levels,
-                max_levels,
-                ..
-            } = viewer.get_viewer_config();
-            let initial_quads = 4f32.powi(min_levels as i32);
-            let current_level = 8;
-            let quads_evaluated = done;
+        let status = self.backend.get_status();
+        let ViewerConfig {
+            min_levels,
+            max_levels,
+            ..
+        } = viewer.get_viewer_config();
+        let initial_quads = 4f32.powi(min_levels as i32);
+        let current_level = status.current_level;
+        let quads_evaluated = status.quads_evaluated;
 
-            // repaint until all levels are done
-            if current_level != max_levels {
-                ctx.request_repaint();
-            }
-
-            let progress = done as f32 / minimum_required as f32;
-            egui::TopBottomPanel::bottom("my_panel").show(ctx, |ui| {
-                let text = match current_level {
-                    x if (0..=min_levels).contains(&x) => {
-                        format!(
-                            "calculating initial grid {:3.0} %",
-                            quads_evaluated as f32 / initial_quads * 100.0
-                        )
-                    }
-                    x if (min_levels..max_levels).contains(&x) => {
-                        format!("refining the grid {current_level}/{max_levels}")
-                    }
-                    _ => {
-                        format!("Done, {quads_evaluated} quads drawn in total")
-                    }
-                };
-                ui.add(ProgressBar::new(progress).text(text).animate(true) );
-            });
+        // repaint until all levels are done
+        if current_level != max_levels {
+            ctx.request_repaint();
         }
+
+        let progress = quads_evaluated as f32 / initial_quads as f32;
+        egui::TopBottomPanel::bottom("my_panel").show(ctx, |ui| {
+            let text = match current_level {
+                x if (0..=min_levels).contains(&x) => {
+                    format!(
+                        "calculating initial grid {:3.0} %",
+                        quads_evaluated as f32 / initial_quads * 100.0
+                    )
+                }
+                x if (min_levels..max_levels).contains(&x) => {
+                    format!("refining the grid {current_level}/{max_levels}")
+                }
+                _ => {
+                    format!("Done, {quads_evaluated} quads drawn in total")
+                }
+            };
+            ui.add(ProgressBar::new(progress).text(text).animate(true));
+        });
 
         egui::CentralPanel::default().show(ctx, |ui| {
             let new_viewer_config = viewer.get_viewer_config();

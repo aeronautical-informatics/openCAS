@@ -1,37 +1,34 @@
 use arc_swap::ArcSwap;
 use atomic_counter::{AtomicCounter, RelaxedCounter};
-use std::borrow::BorrowMut;
 use std::ops::{Deref, DerefMut, Range, RangeInclusive};
 use std::sync::{Arc, RwLock};
 
 use egui::{Color32, ColorImage, TextureHandle};
-use ndarray::{Array2, ArrayViewMut2, Axis};
-
-use rayon::prelude::*;
 use uuid::Uuid;
 
 use super::ViewerConfig;
 
+pub struct Status {
+    pub current_level: usize,
+    pub quads_evaluated: usize,
+}
+
 pub struct VisualizerBackend {
     pub conf: ArcSwap<Option<ViewerConfig>>,
     #[cfg_attr(feature = "persistence", serde(skip))]
-    data: Arc<RwLock<(VisualizerNode, Array2<Color32>, Uuid)>>,
+    data: Arc<RwLock<(VisualizerNode, Uuid)>>,
     #[cfg_attr(feature = "persistence", serde(skip))]
-    min_level_counter: Arc<RelaxedCounter>,
-    additional_quad_counter: Arc<RelaxedCounter>,
+    quad_counter: Arc<RelaxedCounter>,
+    level_done: Arc<ArcSwap<usize>>,
 }
 
 impl Default for VisualizerBackend {
     fn default() -> Self {
         Self {
             conf: Default::default(),
-            data: Arc::new(RwLock::new((
-                VisualizerNode::default(),
-                Array2::default((1, 1)),
-                Uuid::new_v4(),
-            ))),
-            min_level_counter: Default::default(),
-            additional_quad_counter: Default::default(),
+            data: Arc::new(RwLock::new((VisualizerNode::default(), Uuid::new_v4()))),
+            quad_counter: Default::default(),
+            level_done: Default::default(),
         }
     }
 }
@@ -45,22 +42,21 @@ impl VisualizerBackend {
     ) {
         let uuid = Uuid::new_v4();
         let data = self.data.clone();
-        let min_level_counter = self.min_level_counter.clone();
-        let additional_quad_counter = self.additional_quad_counter.clone();
+        let quad_counter = self.quad_counter.clone();
+        let level_done = self.level_done.clone();
         self.conf.store(Arc::new(Some(config.clone())));
 
         std::thread::spawn(move || {
             let mut lock = data.write().unwrap();
-            (*lock).2 = uuid;
+            (*lock).1 = uuid;
 
-            min_level_counter.reset();
-            additional_quad_counter.reset();
+            quad_counter.reset();
             let side_length = 2usize.pow(config.max_levels as u32);
             drop(lock);
 
             let check_data = data.clone();
             let check_uuid = uuid;
-            let valid = move || check_data.read().unwrap().deref().2 == check_uuid;
+            let valid = move || check_data.read().unwrap().deref().1 == check_uuid;
 
             let tree = VisualizerNode {
                 value: 0,
@@ -74,29 +70,25 @@ impl VisualizerBackend {
 
             {
                 let mut lock = data.write().unwrap();
-                if lock.deref().2 != uuid {
+                if lock.deref().1 != uuid {
                     return;
                 }
                 lock.deref_mut().0 = tree.clone();
-                lock.deref_mut().1 = Array2::default((side_length, side_length));
+                texture.set(ColorImage::new(
+                    [side_length, side_length],
+                    Color32::TRANSPARENT,
+                ));
+                level_done.store(Arc::new(1));
             }
 
-            tree.gen_children_rec(&f, config.min_levels, &valid, &min_level_counter);
+            tree.gen_children_rec(&f, config.min_levels, &valid, &quad_counter);
 
             {
-                let mut lock = data.write().unwrap();
-                if lock.deref().2 != uuid {
+                let lock = data.read().unwrap();
+                if lock.deref().1 != uuid {
                     return;
                 }
-                let buffer = (*lock).1.borrow_mut();
-                tree.fill_buffer(buffer.view_mut(), &config);
-                texture.set(ColorImage::from_rgba_unmultiplied(
-                    [side_length, side_length],
-                    &buffer
-                        .par_iter()
-                        .flat_map(|c| c.to_srgba_unmultiplied())
-                        .collect::<Vec<_>>(),
-                ));
+                tree.set_partially(&texture, &config);
             }
 
             for level in 0..config.max_levels {
@@ -104,42 +96,29 @@ impl VisualizerBackend {
                     return;
                 }
                 tree.level_nodes(level)
-                    .par_iter()
+                    .iter()
                     .filter(|n| n.children.load().is_none())
                     .filter(|n| !n.corners_are_identical(&f))
                     .for_each(|n| {
                         n.gen_children(&f);
-                        additional_quad_counter.add(4);
+                        quad_counter.add(4);
                     });
                 {
-                    let mut lock = data.write().unwrap();
-                    if lock.deref().2 != uuid {
+                    let lock = data.read().unwrap();
+                    if lock.deref().1 != uuid {
                         return;
                     }
-                    let buffer = (*lock).1.borrow_mut();
-                    tree.fill_buffer(buffer.view_mut(), &config);
-
-                    texture.set(ColorImage::from_rgba_unmultiplied(
-                        [side_length, side_length],
-                        &buffer
-                            .par_iter()
-                            .flat_map(|c| c.to_srgba_unmultiplied())
-                            .collect::<Vec<_>>(),
-                    ));
+                    tree.set_partially(&texture, &config);
+                    level_done.store(Arc::new(level + 1));
                 }
             }
         });
     }
 
-    pub fn get_status(&self) -> Option<((usize, usize), usize)> {
-        if let Some(conf) = self.conf.load_full().deref() {
-            let min_quads_target = 2usize.pow(conf.min_levels as u32).pow(2);
-            Some((
-                (self.min_level_counter.get(), min_quads_target),
-                self.additional_quad_counter.get(),
-            ))
-        } else {
-            None
+    pub fn get_status(&self) -> Status {
+        Status {
+            current_level: *self.level_done.load_full(),
+            quads_evaluated: self.quad_counter.get(),
         }
     }
 }
@@ -155,24 +134,21 @@ pub struct VisualizerNode {
 }
 
 impl VisualizerNode {
-    fn fill_buffer(&self, mut buffer: ArrayViewMut2<'_, Color32>, config: &ViewerConfig) {
+    fn set_partially(&self, texture: &TextureHandle, config: &ViewerConfig) {
         if let Some(children) = self.children.load_full().deref() {
-            let len = buffer.len_of(Axis(0)) / 2;
-            let buffers = buffer
-                .exact_chunks_mut((len, len))
-                .into_iter()
-                .collect::<Vec<_>>();
             children
-                .into_par_iter()
-                .zip(buffers)
-                .for_each(|(n, b)| n.fill_buffer(b, config));
+                .iter()
+                .for_each(|n| n.set_partially(texture, config));
         } else {
-            buffer.fill(
-                config
-                    .output_variants
-                    .get(self.value as usize)
-                    .map(|(_, c)| *c)
-                    .unwrap_or_else(|| Color32::TRANSPARENT),
+            let color = config
+                .output_variants
+                .get(self.value as usize)
+                .map(|(_, c)| *c)
+                .unwrap_or_else(|| Color32::TRANSPARENT);
+            let size = texture.size();
+            texture.clone().set_partial(
+                [self.x_pixel_range.start, size[1] - self.y_pixel_range.end],
+                ColorImage::new([self.x_pixel_range.len(), self.y_pixel_range.len()], color),
             );
         }
     }
@@ -182,7 +158,7 @@ impl VisualizerNode {
             vec![self.clone()]
         } else if let Some(children) = self.children.load_full().deref().clone() {
             children
-                .into_par_iter()
+                .into_iter()
                 .flat_map(|c| c.level_nodes(level - 1))
                 .collect()
         } else {
@@ -210,7 +186,7 @@ impl VisualizerNode {
                 if !valid() {
                     return;
                 }
-                c.par_iter_mut().for_each(|c| {
+                c.iter_mut().for_each(|c| {
                     c.gen_children_rec(f, level - 1, valid, counter);
                     c.simplify()
                 });
@@ -286,7 +262,7 @@ impl VisualizerNode {
             return false;
         }
         if let Some(c) = self.children.load_full().deref() {
-            return c.into_par_iter().all(|c| c.self_and_descendants_are(v));
+            return c.iter().all(|c| c.self_and_descendants_are(v));
         }
         true
     }
