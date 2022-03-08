@@ -46,7 +46,7 @@ impl VisualizerBackend {
         let level_done = self.level_done.clone();
         self.conf.store(Arc::new(Some(config.clone())));
 
-        std::thread::spawn(move || {
+        let thread = async move {
             let mut lock = data.write().unwrap();
             (*lock).1 = uuid;
 
@@ -112,7 +112,11 @@ impl VisualizerBackend {
                     level_done.store(Arc::new(level + 1));
                 }
             }
-        });
+        };
+        #[cfg(target_arch = "wasm32")]
+        wasm_bindgen_futures::spawn_local(thread);
+        #[cfg(not(target_arch = "wasm32"))]
+        std::thread::spawn(|| futures::executor::block_on(thread));
     }
 
     pub fn get_status(&self) -> Status {

@@ -96,6 +96,9 @@ impl Default for HCasCartesianGui {
             pra: 0,
             output_colors: Self::DEFAULT_COLORS.into_iter().collect(),
             min_level: 5,
+            #[cfg(target_arch = "wasm32")]
+            max_level: 8,
+            #[cfg(not(target_arch = "wasm32"))]
             max_level: 10,
         };
 
