@@ -66,8 +66,8 @@ pub enum HCasInput {
     #[strum(message = "ft", detailed_message = "lateral dist")]
     Y,
 
-    /// intruder bearing
-    #[strum(message = "rad", detailed_message = "θ")]
+    /// relative intruder bearing, positive value points left
+    #[strum(message = "rad", detailed_message = "ψ")]
     IntruderBearing,
 }
 
@@ -314,7 +314,7 @@ trait Visualizable {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ViewerConfig {
     /// the output value -> Color mapping
-    /// For the example of the H-CAS, this is fife: CoC, WL, WR, SL, SR
+    /// For the example of the H-CAS, these are: CoC, WL, WR, SL, SR
     pub output_variants: Vec<(String, Color32)>,
 
     /// From where to where to render on the x-axis
@@ -457,7 +457,7 @@ impl epi::App for TemplateApp {
                         format!("Done, {quads_evaluated} quads drawn in total")
                     }
                 };
-                ui.add(ProgressBar::new(progress).text(text).animate(true) );
+                ui.add(ProgressBar::new(progress).text(text).animate(true));
             });
         }
 
