@@ -397,6 +397,14 @@ impl epi::App for TemplateApp {
         epi::set_value(storage, epi::APP_KEY, self);
     }
 
+    /// Set the maximum size of the canvas for WebGL based renderers
+    fn max_size_points(&self) -> egui::Vec2 {
+        egui::Vec2 {
+            x: f32::MAX,
+            y: f32::MAX,
+        }
+    }
+
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, _frame: &epi::Frame) {
