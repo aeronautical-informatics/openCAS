@@ -59,6 +59,7 @@
             binaryen
             httplz
             toolchain
+            cargo-flamegraph
             wasm-bindgen-cli
           ];
           buildInputs = packages.advisory_viewer.buildInputs;
