@@ -18,7 +18,7 @@
             stable.cargo
             stable.clippy
             stable.rustfmt
-            targets."wasm32-unknown-unknown".stable.rust-std
+            targets.wasm32-unknown-unknown.stable.rust-std
           ];
         naersk-lib = (naersk.lib.${system}.override {
           cargo = toolchain;
@@ -58,6 +58,7 @@
           nativeBuildInputs = with pkgs; packages.advisory_viewer.nativeBuildInputs ++ [
             binaryen
             httplz
+            binaryen
             toolchain
             cargo-flamegraph
             wasm-bindgen-cli
