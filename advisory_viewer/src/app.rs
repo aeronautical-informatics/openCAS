@@ -424,10 +424,12 @@ impl epi::App for TemplateApp {
         let viewer = self.viewers.get_mut(viewer_key).unwrap();
 
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
-            ui.heading(format!("Settings for {viewer_key}"));
-            if viewer.draw_config(ui) {
-                self.last_viewer_config = None;
-            };
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.heading(format!("Settings for {viewer_key}"));
+                if viewer.draw_config(ui) {
+                    self.last_viewer_config = None;
+                };
+            });
         });
 
         // show progressbar
