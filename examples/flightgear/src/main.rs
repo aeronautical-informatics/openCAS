@@ -9,8 +9,9 @@ use opencas::*;
 use serde::{Deserialize, Serialize};
 use uom::si::angle::degree;
 use uom::si::f32::*;
+use uom::si::length::foot;
 use uom::si::time::second;
-use uom::si::velocity::knot;
+use uom::si::velocity::{foot_per_second, knot};
 
 #[derive(Serialize)]
 struct FlightgearCommand {
@@ -52,13 +53,17 @@ struct PropertyTreeLeaf {
 #[derive(Clone, Default)]
 struct AircraftState {
     pub groundspeed: Velocity,
+    pub vertical_speed: Velocity,
     pub lng: Angle,
     pub lat: Angle,
+    pub altitude: Length,
     pub heading: Angle,
 }
 
 const KEYS: &[&str] = &[
     "/velocities/groundspeed-kt",
+    "/velocities/vertical-speed-fps",
+    "/position/altitude-ft",
     "/position/longitude-deg",
     "/position/latitude-deg",
     "/orientation/heading-deg",
@@ -66,6 +71,8 @@ const KEYS: &[&str] = &[
     "/ai/models/aircraft[0]/position/longitude-deg",
     "/ai/models/aircraft[0]/position/latitude-deg",
     "/ai/models/aircraft[0]/orientation/heading-deg",
+    "/ai/models/aircraft[0]/velocities/vertical-speed-fps",
+    "/ai/models/aircraft[0]/position/altitude-ft",
 ];
 
 const USAGE: &str = "usage: <Flightgear base url>";
@@ -114,6 +121,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "/position/longitude-deg" => user.lng = Angle::new::<degree>(leaf.value),
                 "/position/latitude-deg" => user.lat = Angle::new::<degree>(leaf.value),
                 "/orientation/heading-deg" => user.heading = Angle::new::<degree>(leaf.value),
+                "/velocities/vertical-speed-fps" => {
+                    user.vertical_speed = Velocity::new::<foot_per_second>(leaf.value)
+                }
+                "/position/altitude-ft" => user.altitude = Length::new::<foot>(leaf.value),
                 "/ai/models/aircraft[0]/velocities/groundspeed-kt" => {
                     ai.groundspeed = Velocity::new::<knot>(leaf.value)
                 }
@@ -125,6 +136,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
                 "/ai/models/aircraft[0]/orientation/heading-deg" => {
                     ai.heading = Angle::new::<degree>(leaf.value)
+                }
+                "/ai/models/aircraft[0]/velocities/vertical-speed-fps" => {
+                    ai.vertical_speed = Velocity::new::<foot_per_second>(leaf.value)
+                }
+                "/ai/models/aircraft[0]/position/altitude-ft" => {
+                    ai.altitude = Length::new::<foot>(leaf.value)
                 }
                 _ => {}
             }
