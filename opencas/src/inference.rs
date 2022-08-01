@@ -59,6 +59,8 @@ impl<const N_INPUT: usize, const N_MAT: usize, const N_NEURON: usize, const N_OU
     /// This is basically a lot of linear algebra. It breaks down to
     /// `y = m * x + t` done by any given neuron in a given layer. Because of the amount of neurons,
     /// it is easy to do via matrix and vector multiplication and addition.
+    /// After every multiplication/addition step, the outputs are checked for their value.
+    /// If the value is <= 0, the output is set to 0. Else, nothing happens (ReLU activation function).
     /// ´Undo_normalize()` will reverse the normalization so the result becomes more interpretable.
     pub fn eval(&self, mut inputs: Vector<N_INPUT>) -> Vector<N_OUTPUT> {
         self.normalize(&mut inputs);
