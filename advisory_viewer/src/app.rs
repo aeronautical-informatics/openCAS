@@ -1,11 +1,8 @@
 use std::{collections::BTreeMap, hash::Hash, ops::RangeInclusive};
 
-use eframe::epi;
 use egui::{
-    self,
-    plot::PlotImage,
-    plot::{Plot, Value},
-    Color32, ColorImage, DragValue, ProgressBar, TextureHandle,
+    self, plot::Plot, plot::PlotImage, Align, Color32, ColorImage, DragValue, ProgressBar,
+    TextureFilter, TextureHandle,
 };
 
 use serde::{Deserialize, Serialize};
@@ -208,7 +205,7 @@ impl Visualizable for HCasCartesianGui {
                                 .clamp_range(f32::MIN..=max)
                                 .speed(drag_value_speed),
                         );
-                        ui.with_layout(egui::Layout::right_to_left(), |ui| {
+                        ui.with_layout(egui::Layout::right_to_left(Align::LEFT), |ui| {
                             ui.add_sized(
                                 size,
                                 DragValue::new(&mut max)
@@ -354,6 +351,21 @@ pub struct TemplateApp {
     texture_handle: Option<TextureHandle>,
 }
 
+impl TemplateApp {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        // This is also where you can customized the look at feel of egui using
+        // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
+
+        // Load previous app state (if any).
+        // Note that you must enable the `persistence` feature for this to work.
+        if let Some(storage) = cc.storage {
+            return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+        }
+
+        Default::default()
+    }
+}
+
 impl Default for TemplateApp {
     fn default() -> Self {
         let viewers: BTreeMap<String, Box<dyn Visualizable>> = [(
@@ -374,32 +386,10 @@ impl Default for TemplateApp {
     }
 }
 
-impl epi::App for TemplateApp {
-    fn name(&self) -> &str {
-        "Advisory Viewer"
-    }
-
-    /// Called once before the first frame.
-    fn setup(
-        &mut self,
-        _ctx: &egui::Context,
-        _frame: &epi::Frame,
-        _storage: Option<&dyn epi::Storage>,
-    ) {
-        // Load previous app state (if any).
-        if let Some(storage) = _storage {
-            *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default()
-        }
-    }
-
-    /// Called by the frame work to save state before shutdown.
-    fn save(&mut self, storage: &mut dyn epi::Storage) {
-        epi::set_value(storage, epi::APP_KEY, self);
-    }
-
+impl eframe::App for TemplateApp {
     /// Set the maximum size of the canvas for WebGL based renderers
-    fn max_size_points(&self) -> egui::Vec2 {
-        egui::Vec2 {
+    fn max_size_points(&self) -> eframe::egui::Vec2 {
+        eframe::egui::Vec2 {
             x: f32::MAX,
             y: f32::MAX,
         }
@@ -407,7 +397,7 @@ impl epi::App for TemplateApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
-    fn update(&mut self, ctx: &egui::Context, _frame: &epi::Frame) {
+    fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("Choose Viewee", |ui| {
@@ -479,14 +469,19 @@ impl epi::App for TemplateApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             let new_viewer_config = viewer.get_viewer_config();
             let default_color = new_viewer_config.output_variants[0].1;
-            let texture_handle = self
-                .texture_handle
-                .get_or_insert(ctx.load_texture("plot", ColorImage::new([1, 1], default_color)));
+            let texture_handle = self.texture_handle.get_or_insert(ctx.load_texture(
+                "plot",
+                ColorImage::new([1, 1], default_color),
+                TextureFilter::Nearest,
+            ));
 
             let (x_min, x_max) = new_viewer_config.x_axis_range.clone().into_inner();
             let (y_min, y_max) = new_viewer_config.y_axis_range.clone().into_inner();
 
-            let center = Value::new((x_min + x_max) / 2.0, (y_min + y_max) / 2.0);
+            let center = [
+                ((x_min + x_max) / 2.0) as f64,
+                ((y_min + y_max) / 2.0) as f64,
+            ];
             let size = [x_max - x_min, y_max - y_min];
             let aspect_ratio = size[0] / size[1];
 
@@ -502,7 +497,7 @@ impl epi::App for TemplateApp {
                 self.last_viewer_config = new_viewer_config;
             }
 
-            let plot_image = PlotImage::new(texture_handle.id(), center, size);
+            let plot_image = PlotImage::new(texture_handle.id(), center.into(), size);
 
             Plot::new("my_plot")
                 .data_aspect(aspect_ratio)

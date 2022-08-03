@@ -5,7 +5,13 @@
 // When compiling natively:
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
-    let app = advisory_viewer::TemplateApp::default();
+    // Log to stdout (if you run with `RUST_LOG=debug`).
+    tracing_subscriber::fmt::init();
+
     let native_options = eframe::NativeOptions::default();
-    eframe::run_native(Box::new(app), native_options);
+    eframe::run_native(
+        "Advisory Viewer",
+        native_options,
+        Box::new(|cc| Box::new(advisory_viewer::TemplateApp::new(cc))),
+    );
 }
