@@ -16,7 +16,7 @@ eframe = { version = "0.18", features = [ "persistence" ] }
 serde = { version = "1", features = ["derive"] }
 
 opencas = { path = "../opencas" }
-uuid = { version = "0.8", features = [ "v4" ] }
+uuid = { version = "1", features = [ "v4" ] }
 uom = "*"
 arc-swap = "1.5" #For atomic double buffers
 atomic-counter = "1.0" #Track progress of image generator
@@ -33,3 +33,5 @@ futures = "0.3"
 console_error_panic_hook = "0.1.6"
 tracing-wasm = "0.2"
 wasm-bindgen-futures = "0.4"
+getrandom = { version = "*", features = [ "js" ] }
+uuid = { version = "*", features = [ "js" ] }

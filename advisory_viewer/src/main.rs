@@ -10,7 +10,7 @@ fn main() {
 
     let native_options = eframe::NativeOptions::default();
     eframe::run_native(
-        "Advisory Viewer",
+        advisory_viewer::APP_NAME,
         native_options,
         Box::new(|cc| Box::new(advisory_viewer::TemplateApp::new(cc))),
     );
