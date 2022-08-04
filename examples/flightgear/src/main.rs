@@ -1,6 +1,7 @@
 //! This demo illustrates how the openCAS system can be integra&ted with Flightgear
 
 use std::f32::INFINITY;
+use std::f32::consts::PI;
 use std::{env, error::Error, time::Instant};
 
 use futures::prelude::*;
@@ -87,17 +88,16 @@ const USAGE: &str = "usage: <Flightgear base url>";
 // c = atan2(sqrt(a), sqrt(1-a))
 // distance = R * c
 //
-// 2.: calculate the heading angle within the lat/lng triangle
-// and make it relative to the heading angle of the ownship
-// => get a realtive bearing angle from heading of the ownship to position of intruder
+// 2.: calculate the bearing angle and make it relative to the heading angle of the ownship
+// => get a relative (mathematical correct) angle from heading of the ownship to position of intruder
 // heading = atan2(sin(del_lng)*cos(lat2), (cos(lat1)*sin(lat2)-sin(lat1)*cos(lat2)*cos(del_lng)))
 // see https://www.movable-type.co.uk/scripts/latlong.html
 fn haversine(ownship: &AircraftState, intruder: &AircraftState) -> (Length, Angle) {
     //basics for calculation
     const RADIUS_EARTH: f32 = 6271e3; // in meter
     let radius = RADIUS_EARTH + ownship.altitude.get::<meter>();
-    let del_lat = intruder.lat.get::<radian>() - ownship.lat.get::<radian>();
-    let del_lng = intruder.lng.get::<radian>() - ownship.lng.get::<radian>();
+    let del_lat = (intruder.lat - ownship.lat).get::<radian>();
+    let del_lng = (intruder.lng - ownship.lng).get::<radian>();
 
     // distance calc
     let a = (del_lat / 2.0).sin().powi(2)
@@ -105,18 +105,28 @@ fn haversine(ownship: &AircraftState, intruder: &AircraftState) -> (Length, Angl
             * intruder.lat.get::<radian>().cos()
             * (del_lng / 2.0).sin().powi(2);
     let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
-    let range = Length::new::<meter>((radius * c).abs());
+    let range = Length::new::<meter>(radius * c);
 
-    //heading calc
+    //heading calc: convert atan2() (+/-180 deg) into true bearings => easier to calculate
     let bearing = (del_lng.sin() * intruder.lat.get::<radian>().cos()).atan2(
         ownship.lat.get::<radian>().cos() * intruder.lat.get::<radian>().sin()
             - ownship.lat.get::<radian>().sin()
                 * intruder.lat.get::<radian>().cos()
                 * del_lng.cos(),
     );
-    // this step might be wrong as we will not take into account that signed addition happens (theta > 180deg => -(360 -x); vise versa)
-    let theta = Angle::new::<radian>(bearing - ownship.heading.get::<radian>());
-    (range, theta)
+    // check if initial bearing is correct (checked with online tool - see reference above)
+    println!("bearing: {:?}", bearing*180.0/PI);
+    println!("bearing in real bearing form: {:?}", (bearing*180.0/PI+360.0)%360.0);
+    
+    // this step takes into account that signed addition happens (theta > 180deg => -(360 -x); vise versa)
+    let theta = Angle::new::<radian>(
+        match ownship.heading.get::<radian>() - bearing {
+            b if b < PI => b,
+            _ => ownship.heading.get::<radian>() - bearing - 2.0*PI,
+        }
+    );
+    (range, theta) 
+    //ranging error ~1% which is surprisingly high => maybe f32 not precise enough?
 }
 
 // calculate relative heading angles between intruder and ownship
@@ -128,7 +138,12 @@ fn heading_angles(ownship: &AircraftState, intruder: &AircraftState) -> Angle {
     //(mathmetical correct angle intruder) - (mathmetical correct angle ownship)
     //(360deg - intr.heading(clockwise)) - (360deg - own.heading(clockwise))
     // 360deg -intr.heading(cw)- 360deg + own.headin(cw)
-    ownship.heading - intruder.heading
+    match (ownship.heading - intruder.heading).get::<degree>() {
+        // use the "inverse" plane (0..180)
+        psi if (-360.0..-180.0).contains(&psi) => Angle::new::<degree>(360.0+psi),
+        psi if (180.0..360.0).contains(&psi) => Angle::new::<degree>(psi-360.0),
+        _ => ownship.heading - intruder.heading,
+    }
     // be careful here!
     // Paper says it is in degrees, trained networks say it is in radian  -> whats the training data?
 }
@@ -146,34 +161,85 @@ fn relative_altitudes(ownship: &AircraftState, intruder: &AircraftState) -> Leng
 // r==horizontal separation aka range; r_p==safety range (minimal distance for NMAC -> in paper == 500ft); v_rel== relative velocity
 fn calc_tau_horizontal(ownship: &AircraftState, intruder: &AircraftState) -> Time {
     // get range
-    let (range, _) = haversine(ownship, intruder);
+    let (range, theta) = haversine(ownship, intruder);
+    let psi = heading_angles(ownship, intruder);
     let r_p = Length::new::<foot>(500.0);
+    
+    // relative speed from intruder to ownship => v_io
+    let v_fwrd =intruder.groundspeed * psi.get::<radian>().sin() - ownship.groundspeed;
+    let v_sdwrd = intruder.groundspeed * psi.get::<radian>().cos();
 
-    // get relative velocity relative to north => should make it a bit easier than doing the calculations in a transformed system
-    let v_fwrd_ownship = ownship.groundspeed * ownship.heading.get::<radian>().cos();
-    let v_sidewrd_ownship = ownship.groundspeed * ownship.heading.get::<radian>().sin();
-    let v_fwrd_intruder = intruder.groundspeed * intruder.heading.get::<radian>().cos();
-    let v_sidewrd_intruder = intruder.groundspeed * intruder.heading.get::<radian>().sin();
-
-    let v_fwrd = v_fwrd_ownship - v_fwrd_intruder;
-    let v_sdwrd = v_sidewrd_ownship - v_sidewrd_intruder;
-
-    // do I need to do the mathematical conversion here or can I just trust the uom lib to do it correctly afterwards?
+    // relative angle
+    let alpha_rel = v_fwrd.atan2(v_sdwrd);
+    
+    // calculate magnitude of rel speed 
     let v_rel = Velocity::new::<foot_per_second>(
         (v_fwrd.get::<foot_per_second>().powi(2) + v_sdwrd.get::<foot_per_second>().powi(2)).sqrt(),
     );
-    //let v_rel = (v_fwrd.powi(2) + v_sdwrd.powi(2)).sqrt();
+    // ordne nun die Flugrichtung der Bedrohlichkeit des Flugzeugs zu
+    // wie die marine geschichte
+    // wann kommt das flugzeug auf mich zu und wann fliegt es mgl weg
 
-    // calc tau (foot/foot_per_second)
-    (range - r_p) / v_rel
+     match theta.get::<degree>() {
+        // if intr relative to own is in Quad II (NN range 0-90 deg) 
+        // -> only consider relative speed headings that head towards intruder (atan2 output 0-180)
+        b if (0.0..90.0).contains(&b) => match alpha_rel.get::<degree>() {
+            b if (0.0..180.0).contains(&b) => (range - r_p) / v_rel,
+            _ => Time::new::<second>(INFINITY),
+        },
+        // if intr relative to own is in Quad III (NN range 90-180 deg) 
+        // -> only consider relative speed headings that head towards intruder (atan2 output 0-90)
+        b if (90.0..=180.0).contains(&b) => match alpha_rel.get::<degree>() {
+            b if (0.0..180.0).contains(&b) => (range - r_p) / v_rel,
+            _ => Time::new::<second>(INFINITY),
+        },
+        // if intr relative to own is in Quad I (NN range 0 - (-90) deg) 
+        // -> only consider relative speed headings that head towards intruder (atan2 output -0 - (-180))
+        b if (-0.0..-90.0).contains(&b) => match alpha_rel.get::<degree>() {
+            b if (0.0..-180.0).contains(&b) => (range - r_p) / v_rel,
+            _ => Time::new::<second>(INFINITY),
+        },
+        // if intr relative to own is in Quad IV (NN range -90 - (-180) deg) 
+        // -> only consider relative speed headings that head towards intruder (atan2 output 0 - (-90))
+        b if (-90.0..=-180.0).contains(&b) => match alpha_rel.get::<degree>() {
+            b if (0.0..-90.0).contains(&b) => (range - r_p) / v_rel,
+            _ => Time::new::<second>(INFINITY),
+        },
+        _ => Time::new::<second>(INFINITY),
+        }
+
+
 }
+/*
+// get relative velocity relative to north => should make it a bit easier than doing the calculations in a transformed system
+let v_fwrd_ownship = ownship.groundspeed * ownship.heading.get::<radian>().cos();
+let v_sidewrd_ownship = ownship.groundspeed * ownship.heading.get::<radian>().sin();
+let v_fwrd_intruder = intruder.groundspeed * intruder.heading.get::<radian>().cos();
+let v_sidewrd_intruder = intruder.groundspeed * intruder.heading.get::<radian>().sin();
 
+// Speed relative to ownship V_io
+let v_fwrd =  v_fwrd_intruder - v_fwrd_ownship;
+let v_sdwrd = v_sidewrd_intruder - v_sidewrd_ownship;
+
+
+// do I need to do the mathematical conversion here or can I just trust the uom lib to do it correctly afterwards?
+let v_rel = Velocity::new::<foot_per_second>(
+    (v_fwrd.get::<foot_per_second>().powi(2) + v_sdwrd.get::<foot_per_second>().powi(2)).sqrt(),
+);
+//let v_rel = (v_fwrd.powi(2) + v_sdwrd.powi(2)).sqrt();
+
+// calc tau (foot/foot_per_second)
+(range - r_p) / v_rel
+*/
+
+/*
 // or lets try this way
 // T_cpa = -(X_r*U_r + Y_r*V_r)/(U_r^2 + V_r^2) from "Collision Avoidance Law Using Information Amount" Seiya Ueno and Takehiro Higuchi
 //die Frage ist, wie bekommen wir relative Geschwindigkeit errechnet?
-// fn tau_hori_comparison(ownship: &AircraftState, intruder: &AircraftState) -> Time {
-//    todo!();
-// }
+ fn tau_hori_comparison(ownship: &AircraftState, intruder: &AircraftState) -> Time {
+    todo!();
+ }
+*/
 
 // calculate tau until vertical collision (it's not pretty.. but it works)
 fn calc_tau_vertical(ownship: &AircraftState, intruder: &AircraftState) -> Time {
@@ -181,10 +247,9 @@ fn calc_tau_vertical(ownship: &AircraftState, intruder: &AircraftState) -> Time 
     let altitude = relative_altitudes(ownship, intruder);
     let h_p = Length::new::<foot>(100.0); // safety margin above and below ownship
                                           // if the intruder is above the ownship
-    if altitude.is_sign_positive() {
-
+    if altitude.is_sign_positive() { // == true
+        //sanity checks
         println!("altitude signed positive");
-        // == true
         // if the ownship vertical speed is greater than intruder
         if ownship.vertical_speed > intruder.vertical_speed {
             //both climbing but ownship climbs faster and catches up
@@ -192,6 +257,8 @@ fn calc_tau_vertical(ownship: &AircraftState, intruder: &AircraftState) -> Time 
                 && intruder.vertical_speed.is_sign_positive()
             // (...) == true
             {
+                //sanity checks
+                println!("climb - catch up");
                 let rel_speed = ownship.vertical_speed - intruder.vertical_speed;
                 (altitude - h_p) / rel_speed
 
@@ -200,6 +267,8 @@ fn calc_tau_vertical(ownship: &AircraftState, intruder: &AircraftState) -> Time 
                 && intruder.vertical_speed.is_sign_negative()
             // (...) == true
             {
+                //sanity checks
+                println!("collision course.. climb and descend");
                 let rel_speed = ownship.vertical_speed - intruder.vertical_speed;
                 (altitude - h_p) / rel_speed
 
@@ -207,7 +276,9 @@ fn calc_tau_vertical(ownship: &AircraftState, intruder: &AircraftState) -> Time 
             } else if ownship.vertical_speed.is_sign_negative()
                 && intruder.vertical_speed.is_sign_negative()
             // (...) == true
-            {
+            {   
+                //sanity checks
+                println!("descend - catch up");
                 let rel_speed = intruder.vertical_speed.abs() - ownship.vertical_speed.abs();
                 (altitude - h_p) / rel_speed
 
@@ -235,6 +306,8 @@ fn calc_tau_vertical(ownship: &AircraftState, intruder: &AircraftState) -> Time 
                 && intruder.vertical_speed.is_sign_positive()
             // (...) == true
             {
+                //sanity checks
+                println!("climb - catch up");
                 let rel_speed = intruder.vertical_speed - ownship.vertical_speed;
                 (altitude.abs() - h_p) / rel_speed
 
@@ -242,7 +315,9 @@ fn calc_tau_vertical(ownship: &AircraftState, intruder: &AircraftState) -> Time 
             } else if intruder.vertical_speed.is_sign_positive()
                 && ownship.vertical_speed.is_sign_negative()
             // (...) == true
-            {
+{
+                //sanity checks
+                println!("collision course.. climb and descend");
                 let rel_speed = intruder.vertical_speed - ownship.vertical_speed;
                 (altitude.abs() - h_p) / rel_speed
 
@@ -251,6 +326,8 @@ fn calc_tau_vertical(ownship: &AircraftState, intruder: &AircraftState) -> Time 
                 && intruder.vertical_speed.is_sign_negative()
             // (...) == true
             {
+                //sanity checks
+                println!("descend - catch up");
                 let rel_speed = ownship.vertical_speed.abs() - intruder.vertical_speed.abs();
                 (altitude.abs() - h_p) / rel_speed
 
@@ -380,7 +457,9 @@ mod test {
     
     #[test]
     pub fn test_hcas_processing() {
-                //Instantiate HCAS
+
+        assert!((-5..-3).contains(&-4));
+        //Instantiate HCAS
         let mut hcas = HCas {
             last_advisory: HAdvisory::ClearOfConflict,
         };
@@ -391,8 +470,8 @@ mod test {
             vertical_speed: Velocity::new::<foot_per_second>(300.0),
             lat: Angle::new::<degree>(50.06638889),
             lng: Angle::new::<degree>(-5.08138889),
-            altitude: Length::new::<foot>(1200.0),
-            heading: Angle::new::<degree>(45.0),
+            altitude: Length::new::<foot>(12000.0),
+            heading: Angle::new::<degree>(359.0),
         };
 
         let ai = AircraftState{
@@ -401,7 +480,7 @@ mod test {
             lat: Angle::new::<degree>(50.14388889),
             lng: Angle::new::<degree>(-5.03666667),
             altitude: Length::new::<foot>(1000.0),
-            heading: Angle::new::<degree>(90.0),
+            heading: Angle::new::<degree>(0.10),
         };
         
         // for sake of testing
