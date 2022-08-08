@@ -93,14 +93,14 @@
               nativeBuildInputs = [ pkgs.nixpkgs-fmt toolchain ];
             } ''
             nixpkgs-fmt --check ${./.}
-            cargo fmt --check
+            ( cd ${./.} && cargo fmt --check )
             touch $out
           '';
           clippy = pkgs.runCommand "clippy"
             {
               nativeBuildInputs = [ toolchain ];
             } ''
-            cargo clippy
+            ( cd ${./.} && cargo clippy )
             touch $out
           '';
 
