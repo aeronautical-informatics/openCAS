@@ -116,8 +116,8 @@ fn haversine(ownship: &AircraftState, intruder: &AircraftState) -> (Length, Angl
                 * del_lng.cos(),
     );
     // check if initial bearing is correct (checked with online tool - see reference above)
-    //println!("bearing: {:?}", bearing*180.0/PI);
-    //println!("bearing in real bearing form: {:?}", (bearing*180.0/PI+360.0)%360.0);
+    println!("bearing: {:?}", bearing*180.0/PI);
+    println!("bearing in real bearing form: {:?}", (bearing*180.0/PI+360.0)%360.0);
     
     // this step takes into account that signed addition happens (theta > 180deg => -(360 -x); vise versa)
     let theta = Angle::new::<radian>(
@@ -183,12 +183,14 @@ fn calc_tau_horizontal(ownship: &AircraftState, intruder: &AircraftState) -> Tim
 
     let alpha_rel = v_fwrd.atan2(v_sdwrd);
 
-    /*
-    println!("v_rel über alter Ansatz: {:?}", v_rel.get::<foot_per_second>());
-    println!("v_fwrd über alter Ansatz: {:?}", v_fwrd.get::<foot_per_second>());
-    println!("v_sdwrd über alter Ansatz: {:?}", v_sdwrd.get::<foot_per_second>());
+    
+    println!("v_rel über alter Ansatz: {:?}", v_rel.get::<knot>());
+    println!("v_fwrd über alter Ansatz: {:?}", v_fwrd.get::<knot>());
+    println!("v_sdwrd über alter Ansatz: {:?}", v_sdwrd.get::<knot>());
     println!("alpha_rel über alter Ansatz: {:?}", alpha_rel.get::<degree>());
-    */
+    
+    println!("!!These calculations are partially wrong!! See code calc_tau_horizontal() for more");
+    
 
     // ordne nun die Flugrichtung der Bedrohlichkeit des Flugzeugs zu
     // wie die marine geschichte
@@ -198,6 +200,8 @@ fn calc_tau_horizontal(ownship: &AircraftState, intruder: &AircraftState) -> Tim
         // -> only consider relative speed headings that head towards intruder (atan2 output (-90) - 90)
         // (atan2 output positive ccw from positive x-axis; negative vice versa)
         b if (0.0..90.0).contains(&b) => match alpha_rel.get::<degree>() {
+            // !!!! Using the parameter Range in this context is INCORRECT!! 
+            // !!!! the horizontal separation within the encouter geometry should be used and not the absolute distance
             b if (-90.0..90.0).contains(&b) => (range - r_p) / v_rel,
             _ => Time::new::<second>(INFINITY),
         },
@@ -248,7 +252,6 @@ println!("alpha_rel über neuen Ansatz: {:?}", alpha_rel.get::<degree>());
 /*
 // or lets try this way
 // T_cpa = -(X_r*U_r + Y_r*V_r)/(U_r^2 + V_r^2) from "Collision Avoidance Law Using Information Amount" Seiya Ueno and Takehiro Higuchi
-//die Frage ist, wie bekommen wir relative Geschwindigkeit errechnet?
  fn tau_hori_comparison(ownship: &AircraftState, intruder: &AircraftState) -> Time {
     todo!();
  }
@@ -257,113 +260,123 @@ println!("alpha_rel über neuen Ansatz: {:?}", alpha_rel.get::<degree>());
 // calculate tau until vertical collision (it's not pretty.. but it works)
 fn calc_tau_vertical(ownship: &AircraftState, intruder: &AircraftState) -> Time {
     // first, get relative altitudes
-    let altitude = relative_altitudes(ownship, intruder);
     let h_p = Length::new::<foot>(100.0); // safety margin above and below ownship
-                                          // if the intruder is above the ownship
-    if altitude.is_sign_positive() { // == true
-        //sanity checks
-        //println!("altitude signed positive");
-        // if the ownship vertical speed is greater than intruder
-        if ownship.vertical_speed > intruder.vertical_speed {
-            //both climbing but ownship climbs faster and catches up
-            if ownship.vertical_speed.is_sign_positive()
-                && intruder.vertical_speed.is_sign_positive()
-            // (...) == true
-            {
-                //sanity checks
-                //println!("climb - catch up");
-                let rel_speed = ownship.vertical_speed - intruder.vertical_speed;
-                (altitude - h_p) / rel_speed
+    let altitude = match relative_altitudes(ownship, intruder) {
+        alt if alt.is_sign_positive() => alt - h_p,
+        _ => relative_altitudes(ownship, intruder) + h_p,
+    };
+    println!("Altitude: {:?}", altitude.get::<foot>());
 
-            // intruder is descending but ownship is climbing
-            } else if ownship.vertical_speed.is_sign_positive()
-                && intruder.vertical_speed.is_sign_negative()
-            // (...) == true
-            {
-                //sanity checks
-                //println!("collision course.. climb and descend");
-                let rel_speed = ownship.vertical_speed - intruder.vertical_speed;
-                (altitude - h_p) / rel_speed
+    let delta_speed = intruder.vertical_speed - ownship.vertical_speed;
+    println!("delta speed: {:?}", delta_speed.get::<foot_per_second>());
+    -(altitude)/delta_speed
 
-            // if both are descending but ownship is slower than intruder so intruder catches up ((-5 ft/min) > (-15 ft/min) but |-5| < |-15|)
-            } else if ownship.vertical_speed.is_sign_negative()
-                && intruder.vertical_speed.is_sign_negative()
-            // (...) == true
-            {   
-                //sanity checks
-                //println!("descend - catch up");
-                let rel_speed = intruder.vertical_speed.abs() - ownship.vertical_speed.abs();
-                (altitude - h_p) / rel_speed
-
-            // if any of has no vertical speed
-            /***** CHECK: .is_sign_positive/negative FOR COVERAGE OF 0.0!! *****/
-            } else {
-                Time::new::<second>(INFINITY)
-            }
-        // 1)if intruder climbing rate is higher than ownship (ownship.vertical_speed < intruder.vertical_speed)
-        // 1.1) intruder climbs faster than ownship -> not critical
-        // 1.2) intruder climbs while ownship falls -> not critical
-        // 1.3) both descend but intruder with a slower descending rate ((-5 ft/min) > (-15 ft/min) but |-5| < |-15|)
-        // 2) if they have no realtive speed (ownship.vertical_speed == intruder.vertical_speed)
-        } else {
-            Time::new::<second>(INFINITY)
-        }
-
-    // if ownship is above intruder
-    } else if altitude.is_sign_negative() { // == true
-        //println!("altitude signed negative");
-        // if the intruder vertical speed is greater than ownship
-        if intruder.vertical_speed > ownship.vertical_speed {
-            //both climbing but intruder climbs faster and catches up
-            if ownship.vertical_speed.is_sign_positive()
-                && intruder.vertical_speed.is_sign_positive()
-            // (...) == true
-            {
-                //sanity checks
-                //println!("climb - catch up");
-                let rel_speed = intruder.vertical_speed - ownship.vertical_speed;
-                (altitude.abs() - h_p) / rel_speed
-
-            // ownship is descending but intruder is climbing
-            } else if intruder.vertical_speed.is_sign_positive()
-                && ownship.vertical_speed.is_sign_negative()
-            // (...) == true
-{
-                //sanity checks
-                //println!("collision course.. climb and descend");
-                let rel_speed = intruder.vertical_speed - ownship.vertical_speed;
-                (altitude.abs() - h_p) / rel_speed
-
-                // if both are descending but intruder is slower than ownship so it catches up ((-5 ft/min) > (-15 ft/min) but |-5| < |-15|)
-            } else if ownship.vertical_speed.is_sign_negative()
-                && intruder.vertical_speed.is_sign_negative()
-            // (...) == true
-            {
-                //sanity checks
-                //println!("descend - catch up");
-                let rel_speed = ownship.vertical_speed.abs() - intruder.vertical_speed.abs();
-                (altitude.abs() - h_p) / rel_speed
-
-            // if any of has no vertical speed
-            /***** CHECK: .is_sign_positive/negative FOR COVERAGE OF 0.0!! *****/
-            } else {
-                Time::new::<second>(INFINITY)
-            }
-        // 1) if ownship climbing rate is higher than intruder (intruder.vertical_speed < ownship.vertical_speed)
-        // 1.1) ownship climbs faster than intruder -> not critical
-        // 1.2) ownship climbs while intruder falls -> not critical
-        // 1.3) both descend but ownship with a slower descending rate ((-5 ft/min) > (-15 ft/min) but |-5| < |-15|)
-        // 2) if they have no realtive speed (ownship.vertical_speed == intruder.vertical_speed)
-        } else {
-            Time::new::<second>(INFINITY)
-        }
-
-    // if altitude difference is 0
-    } else {
-        //println!("altitude is zero");
-        Time::new::<second>(0.0)
-    }
 }
+/*
+if altitude.is_sign_positive() { // == true
+    //sanity checks
+    //println!("altitude signed positive");
+    // if the ownship vertical speed is greater than intruder
+    if ownship.vertical_speed > intruder.vertical_speed {
+        //both climbing but ownship climbs faster and catches up
+        if ownship.vertical_speed.is_sign_positive()
+            && intruder.vertical_speed.is_sign_positive()
+        // (...) == true
+        {
+            //sanity checks
+            //println!("climb - catch up");
+            let rel_speed = ownship.vertical_speed - intruder.vertical_speed;
+            (altitude - h_p) / rel_speed
+
+        // intruder is descending but ownship is climbing
+        } else if ownship.vertical_speed.is_sign_positive()
+            && intruder.vertical_speed.is_sign_negative()
+        // (...) == true
+        {
+            //sanity checks
+            //println!("collision course.. climb and descend");
+            let rel_speed = ownship.vertical_speed - intruder.vertical_speed;
+            (altitude - h_p) / rel_speed
+
+        // if both are descending but ownship is slower than intruder so intruder catches up ((-5 ft/min) > (-15 ft/min) but |-5| < |-15|)
+        } else if ownship.vertical_speed.is_sign_negative()
+            && intruder.vertical_speed.is_sign_negative()
+        // (...) == true
+        {   
+            //sanity checks
+            //println!("descend - catch up");
+            let rel_speed = intruder.vertical_speed.abs() - ownship.vertical_speed.abs();
+            (altitude - h_p) / rel_speed
+
+        // if any of has no vertical speed
+        /***** CHECK: .is_sign_positive/negative FOR COVERAGE OF 0.0!! *****/
+        } else {
+            Time::new::<second>(INFINITY)
+        }
+    // 1)if intruder climbing rate is higher than ownship (ownship.vertical_speed < intruder.vertical_speed)
+    // 1.1) intruder climbs faster than ownship -> not critical
+    // 1.2) intruder climbs while ownship falls -> not critical
+    // 1.3) both descend but intruder with a slower descending rate ((-5 ft/min) > (-15 ft/min) but |-5| < |-15|)
+    // 2) if they have no realtive speed (ownship.vertical_speed == intruder.vertical_speed)
+    } else {
+        Time::new::<second>(INFINITY)
+    }
+
+// if ownship is above intruder
+} else if altitude.is_sign_negative() { // == true
+    //println!("altitude signed negative");
+    // if the intruder vertical speed is greater than ownship
+    if intruder.vertical_speed > ownship.vertical_speed {
+        //both climbing but intruder climbs faster and catches up
+        if ownship.vertical_speed.is_sign_positive()
+            && intruder.vertical_speed.is_sign_positive()
+        // (...) == true
+        {
+            //sanity checks
+            //println!("climb - catch up");
+            let rel_speed = intruder.vertical_speed - ownship.vertical_speed;
+            (altitude.abs() - h_p) / rel_speed
+
+        // ownship is descending but intruder is climbing
+        } else if intruder.vertical_speed.is_sign_positive()
+            && ownship.vertical_speed.is_sign_negative()
+        // (...) == true
+{
+            //sanity checks
+            //println!("collision course.. climb and descend");
+            let rel_speed = intruder.vertical_speed - ownship.vertical_speed;
+            (altitude.abs() - h_p) / rel_speed
+
+            // if both are descending but intruder is slower than ownship so it catches up ((-5 ft/min) > (-15 ft/min) but |-5| < |-15|)
+        } else if ownship.vertical_speed.is_sign_negative()
+            && intruder.vertical_speed.is_sign_negative()
+        // (...) == true
+        {
+            //sanity checks
+            //println!("descend - catch up");
+            let rel_speed = ownship.vertical_speed.abs() - intruder.vertical_speed.abs();
+            (altitude.abs() - h_p) / rel_speed
+
+        // if any of has no vertical speed
+        /***** CHECK: .is_sign_positive/negative FOR COVERAGE OF 0.0!! *****/
+        } else {
+            Time::new::<second>(INFINITY)
+        }
+    // 1) if ownship climbing rate is higher than intruder (intruder.vertical_speed < ownship.vertical_speed)
+    // 1.1) ownship climbs faster than intruder -> not critical
+    // 1.2) ownship climbs while intruder falls -> not critical
+    // 1.3) both descend but ownship with a slower descending rate ((-5 ft/min) > (-15 ft/min) but |-5| < |-15|)
+    // 2) if they have no realtive speed (ownship.vertical_speed == intruder.vertical_speed)
+    } else {
+        Time::new::<second>(INFINITY)
+    }
+
+// if altitude difference is 0
+} else {
+    //println!("altitude is zero");
+    Time::new::<second>(0.0)
+}
+*/
 
 fn main() -> Result<(), Box<dyn Error>> {
     smol::block_on(async {
@@ -482,39 +495,39 @@ mod test {
         
         // Init Aircraft Structs
         let user = AircraftState{
-            groundspeed: Velocity::new::<foot_per_second>(600.0),
+            groundspeed: Velocity::new::<knot>(8.0),
             vertical_speed: Velocity::new::<foot_per_second>(300.0),
             lat: Angle::new::<degree>(50.06638889),
             lng: Angle::new::<degree>(-5.08138889),
-            altitude: Length::new::<foot>(1200.0),
-            heading: Angle::new::<degree>(45.0),
+            altitude: Length::new::<foot>(2100.0),
+            heading: Angle::new::<degree>(345.0),
         };
 
         let ai = AircraftState{
-            groundspeed: Velocity::new::<foot_per_second>(600.0),
+            groundspeed: Velocity::new::<knot>(14.0),
             vertical_speed: Velocity::new::<foot_per_second>(500.0),
             lat: Angle::new::<degree>(50.14388889),
             lng: Angle::new::<degree>(-5.03666667),
             altitude: Length::new::<foot>(1000.0),
-            heading: Angle::new::<degree>(90.0),
+            heading: Angle::new::<degree>(250.0),
         };
         
         // for sake of testing
-        /*
         println!("Print Primary Parameters: User");
-        println!("Groundspeed {:?}", user.groundspeed.get::<foot_per_second>());
+        println!("Altitude {:?}", user.altitude.get::<foot>());
         println!("Vertical Speed {:?}", user.vertical_speed.get::<foot_per_second>());
+        println!("Print Primary Parameters: AI");
+        println!("Altitude {:?}", ai.altitude.get::<foot>());
+        println!("Vertical Speed {:?}", ai.vertical_speed.get::<foot_per_second>());
+        /*
+        println!("Groundspeed {:?}", user.groundspeed.get::<foot_per_second>());
         println!("Lattitude {:?}", user.lat.get::<degree>());
         println!("Longitude {:?}", user.lng.get::<degree>());
-        println!("Altitude {:?}", user.altitude.get::<foot>());
         println!("Heading {:?}", user.heading.get::<degree>());
 
-        println!("Print Primary Parameters: AI");
         println!("Groundspeed {:?}", ai.groundspeed.get::<foot_per_second>());
-        println!("Vertical Speed {:?}", ai.vertical_speed.get::<foot_per_second>());
         println!("Lattitude {:?}", ai.lat.get::<degree>());
         println!("Longitude {:?}", ai.lng.get::<degree>());
-        println!("Altitude {:?}", ai.altitude.get::<foot>());
         println!("Heading {:?}", ai.heading.get::<degree>());
         */
         let now = Instant::now();
@@ -523,13 +536,14 @@ mod test {
         let psi = heading_angles(&user, &ai);
         let (range, theta) = haversine(&user, &ai);
         let tau_vertical = calc_tau_vertical(&user, &ai);
+        //calc_tau_horizontal(&user, &ai);
         
-/*
+
         println!("tau vertical: {:?}", tau_vertical);
-        println!("range: {:?}", range.get::<kilometer>());
-        println!("theta: {:?}", theta.get::<degree>());
-        println!("psi: {:?}", psi.get::<degree>());
-*/
+        //println!("range: {:?}", range.get::<kilometer>());
+        //println!("theta: {:?}", theta.get::<degree>());
+        //println!("psi: {:?}", psi.get::<degree>());
+
         // do inference for hcas
         let (adv_h, _) = hcas.process_polar(tau_vertical, range, theta, psi);
         hcas.last_advisory = adv_h;
