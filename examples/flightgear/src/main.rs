@@ -1,7 +1,7 @@
 //! This demo illustrates how the openCAS system can be integra&ted with Flightgear
 
-use std::f32::INFINITY;
 use std::f32::consts::PI;
+use std::f32::INFINITY;
 use std::{env, error::Error, time::Instant};
 
 use futures::prelude::*;
@@ -116,17 +116,14 @@ fn haversine(ownship: &AircraftState, intruder: &AircraftState) -> (Length, Angl
                 * del_lng.cos(),
     );
     // check if initial bearing is correct (checked with online tool - see reference above)
-    println!("bearing: {:?}", bearing*180.0/PI);
-    println!("bearing in real bearing form: {:?}", (bearing*180.0/PI+360.0)%360.0);
+    //println!("bearing: {:?}", bearing * 180.0 / PI);
     
     // this step takes into account that signed addition happens (theta > 180deg => -(360 -x); vise versa)
-    let theta = Angle::new::<radian>(
-        match ownship.heading.get::<radian>() - bearing {
-            b if b < PI => b,
-            _ => ownship.heading.get::<radian>() - bearing - 2.0*PI,
-        }
-    );
-    (range, theta) 
+    let theta = Angle::new::<radian>(match ownship.heading.get::<radian>() - bearing {
+        b if b < PI => b,
+        _ => ownship.heading.get::<radian>() - bearing - 2.0 * PI,
+    });
+    (range, theta)
     //ranging error ~1% which is surprisingly high => maybe f32 not precise enough?
 }
 
@@ -141,8 +138,8 @@ fn heading_angles(ownship: &AircraftState, intruder: &AircraftState) -> Angle {
     // 360deg -intr.heading(cw)- 360deg + own.headin(cw)
     match (ownship.heading - intruder.heading).get::<degree>() {
         // use the "inverse" plane (0..180)
-        psi if (-360.0..-180.0).contains(&psi) => Angle::new::<degree>(360.0+psi),
-        psi if (180.0..360.0).contains(&psi) => Angle::new::<degree>(psi-360.0),
+        psi if (-360.0..-180.0).contains(&psi) => Angle::new::<degree>(360.0 + psi),
+        psi if (180.0..360.0).contains(&psi) => Angle::new::<degree>(psi - 360.0),
         _ => ownship.heading - intruder.heading,
     }
     // be careful here!
@@ -166,97 +163,38 @@ fn calc_tau_horizontal(ownship: &AircraftState, intruder: &AircraftState) -> Tim
     let r_p = Length::new::<foot>(500.0);
 
     // get relative velocity relative to north => should make it a bit easier than doing the calculations in a transformed system
-    let v_fwrd_ownship = ownship.groundspeed * ownship.heading.get::<radian>().cos();
-    let v_sidewrd_ownship = ownship.groundspeed * ownship.heading.get::<radian>().sin();
-    let v_fwrd_intruder = intruder.groundspeed * intruder.heading.get::<radian>().cos();
-    let v_sidewrd_intruder = intruder.groundspeed * intruder.heading.get::<radian>().sin();
-    
+    let v_fwrd_ownship = ownship.groundspeed * ownship.heading.cos();
+    let v_sidewrd_ownship = ownship.groundspeed * ownship.heading.sin();
+    let v_fwrd_intruder = intruder.groundspeed * intruder.heading.cos();
+    let v_sidewrd_intruder = intruder.groundspeed * intruder.heading.sin();
+
     // Speed relative to ownship V_io
-    let v_fwrd =  v_fwrd_intruder - v_fwrd_ownship;
+    let v_fwrd = v_fwrd_intruder - v_fwrd_ownship;
     let v_sdwrd = v_sidewrd_intruder - v_sidewrd_ownship;
-    
-    
+
     // do I need to do the mathematical conversion here or can I just trust the uom lib to do it correctly afterwards?
     let v_rel = Velocity::new::<foot_per_second>(
         (v_fwrd.get::<foot_per_second>().powi(2) + v_sdwrd.get::<foot_per_second>().powi(2)).sqrt(),
     );
 
-    let alpha_rel = v_fwrd.atan2(v_sdwrd);
+    // get x/y direction for vector math
+    let x_direction = (range - r_p) * (-theta).sin();
+    let y_direction = (range - r_p) * (-theta).cos();
 
+    // math from "Collision Avoidance Law Using Information Amount" Seiya Ueno and Takehiro Higuchi
+    let tau =
+        -(x_direction * v_sdwrd + y_direction * v_fwrd) / (v_sdwrd * v_sdwrd + v_fwrd * v_fwrd);
     
+        tau
+    }
+    /*
+    let alpha_rel = v_fwrd.atan2(v_sdwrd);
     println!("v_rel über alter Ansatz: {:?}", v_rel.get::<knot>());
     println!("v_fwrd über alter Ansatz: {:?}", v_fwrd.get::<knot>());
     println!("v_sdwrd über alter Ansatz: {:?}", v_sdwrd.get::<knot>());
     println!("alpha_rel über alter Ansatz: {:?}", alpha_rel.get::<degree>());
+    */
     
-    println!("!!These calculations are partially wrong!! See code calc_tau_horizontal() for more");
-    
-
-    // ordne nun die Flugrichtung der Bedrohlichkeit des Flugzeugs zu
-    // wie die marine geschichte
-    // wann kommt das flugzeug auf mich zu und wann fliegt es mgl weg
-     match theta.get::<degree>() {
-        // if intr relative to own is in Quad II (NN range 0-90 deg) 
-        // -> only consider relative speed headings that head towards intruder (atan2 output (-90) - 90)
-        // (atan2 output positive ccw from positive x-axis; negative vice versa)
-        b if (0.0..90.0).contains(&b) => match alpha_rel.get::<degree>() {
-            // !!!! Using the parameter Range in this context is INCORRECT!! 
-            // !!!! the horizontal separation within the encouter geometry should be used and not the absolute distance
-            b if (-90.0..90.0).contains(&b) => (range - r_p) / v_rel,
-            _ => Time::new::<second>(INFINITY),
-        },
-        // if intr relative to own is in Quad III (NN range 90-180 deg) 
-        // -> only consider relative speed headings that head towards intruder (atan2 output 0-90)
-        b if (90.0..=180.0).contains(&b) => match alpha_rel.get::<degree>() {
-            b if (0.0..90.0).contains(&b) => (range - r_p) / v_rel,
-            _ => Time::new::<second>(INFINITY),
-        },
-        // if intr relative to own is in Quad I (NN range 0 - (-90) deg) 
-        // -> only consider relative speed headings that head towards intruder (atan2 output 90-180 && (-90)-(-180))
-        b if (-0.0..-90.0).contains(&b) => match alpha_rel.get::<degree>() {
-            b if (90.0..180.0).contains(&b) => (range - r_p) / v_rel,
-            b if (-90.0..-180.0).contains(&b) => (range - r_p) / v_rel,
-            _ => Time::new::<second>(INFINITY),
-        },
-        // if intr relative to own is in Quad IV (NN range -90 - (-180) deg) 
-        // -> only consider relative speed headings that head towards intruder (atan2 output 90 - 180)
-        b if (-90.0..=-180.0).contains(&b) => match alpha_rel.get::<degree>() {
-            b if (90.0..180.0).contains(&b) => (range - r_p) / v_rel,
-            _ => Time::new::<second>(INFINITY),
-        },
-        _ => Time::new::<second>(INFINITY),
-        }
-
-    }
-
-/*
-let psi = heading_angles(ownship, intruder);
-
-// relative speed from intruder to ownship => v_io
-let v_fwrd =intruder.groundspeed * psi.get::<radian>().sin() - ownship.groundspeed;
-let v_sdwrd = Velocity::new::<foot_per_second>(intruder.groundspeed.get::<foot_per_second>() * psi.get::<radian>().cos());
-
-// relative angle
-let alpha_rel = v_fwrd.atan2(v_sdwrd);
-
-// calculate magnitude of rel speed 
-let v_rel = Velocity::new::<foot_per_second>(
-    (v_fwrd.get::<foot_per_second>().powi(2) + v_sdwrd.get::<foot_per_second>().powi(2)).sqrt(),
-);
-println!("v_rel über neuen Ansatz: {:?}", v_rel.get::<foot_per_second>());
-println!("v_fwrd über neuen Ansatz: {:?}", v_fwrd.get::<foot_per_second>());
-println!("v_sdwrd über neuen Ansatz: {:?}", v_sdwrd.get::<foot_per_second>());
-println!("alpha_rel über neuen Ansatz: {:?}", alpha_rel.get::<degree>());
-*/ 
-
-/*
-// or lets try this way
-// T_cpa = -(X_r*U_r + Y_r*V_r)/(U_r^2 + V_r^2) from "Collision Avoidance Law Using Information Amount" Seiya Ueno and Takehiro Higuchi
- fn tau_hori_comparison(ownship: &AircraftState, intruder: &AircraftState) -> Time {
-    todo!();
- }
-*/
-
 // calculate tau until vertical collision (it's not pretty.. but it works)
 fn calc_tau_vertical(ownship: &AircraftState, intruder: &AircraftState) -> Time {
     // first, get relative altitudes
@@ -265,118 +203,12 @@ fn calc_tau_vertical(ownship: &AircraftState, intruder: &AircraftState) -> Time 
         alt if alt.is_sign_positive() => alt - h_p,
         _ => relative_altitudes(ownship, intruder) + h_p,
     };
-    println!("Altitude: {:?}", altitude.get::<foot>());
+    //println!("Altitude: {:?}", altitude.get::<foot>());
 
     let delta_speed = intruder.vertical_speed - ownship.vertical_speed;
-    println!("delta speed: {:?}", delta_speed.get::<foot_per_second>());
-    -(altitude)/delta_speed
-
+    //println!("delta speed: {:?}", delta_speed.get::<foot_per_second>());
+    -(altitude) / delta_speed
 }
-/*
-if altitude.is_sign_positive() { // == true
-    //sanity checks
-    //println!("altitude signed positive");
-    // if the ownship vertical speed is greater than intruder
-    if ownship.vertical_speed > intruder.vertical_speed {
-        //both climbing but ownship climbs faster and catches up
-        if ownship.vertical_speed.is_sign_positive()
-            && intruder.vertical_speed.is_sign_positive()
-        // (...) == true
-        {
-            //sanity checks
-            //println!("climb - catch up");
-            let rel_speed = ownship.vertical_speed - intruder.vertical_speed;
-            (altitude - h_p) / rel_speed
-
-        // intruder is descending but ownship is climbing
-        } else if ownship.vertical_speed.is_sign_positive()
-            && intruder.vertical_speed.is_sign_negative()
-        // (...) == true
-        {
-            //sanity checks
-            //println!("collision course.. climb and descend");
-            let rel_speed = ownship.vertical_speed - intruder.vertical_speed;
-            (altitude - h_p) / rel_speed
-
-        // if both are descending but ownship is slower than intruder so intruder catches up ((-5 ft/min) > (-15 ft/min) but |-5| < |-15|)
-        } else if ownship.vertical_speed.is_sign_negative()
-            && intruder.vertical_speed.is_sign_negative()
-        // (...) == true
-        {   
-            //sanity checks
-            //println!("descend - catch up");
-            let rel_speed = intruder.vertical_speed.abs() - ownship.vertical_speed.abs();
-            (altitude - h_p) / rel_speed
-
-        // if any of has no vertical speed
-        /***** CHECK: .is_sign_positive/negative FOR COVERAGE OF 0.0!! *****/
-        } else {
-            Time::new::<second>(INFINITY)
-        }
-    // 1)if intruder climbing rate is higher than ownship (ownship.vertical_speed < intruder.vertical_speed)
-    // 1.1) intruder climbs faster than ownship -> not critical
-    // 1.2) intruder climbs while ownship falls -> not critical
-    // 1.3) both descend but intruder with a slower descending rate ((-5 ft/min) > (-15 ft/min) but |-5| < |-15|)
-    // 2) if they have no realtive speed (ownship.vertical_speed == intruder.vertical_speed)
-    } else {
-        Time::new::<second>(INFINITY)
-    }
-
-// if ownship is above intruder
-} else if altitude.is_sign_negative() { // == true
-    //println!("altitude signed negative");
-    // if the intruder vertical speed is greater than ownship
-    if intruder.vertical_speed > ownship.vertical_speed {
-        //both climbing but intruder climbs faster and catches up
-        if ownship.vertical_speed.is_sign_positive()
-            && intruder.vertical_speed.is_sign_positive()
-        // (...) == true
-        {
-            //sanity checks
-            //println!("climb - catch up");
-            let rel_speed = intruder.vertical_speed - ownship.vertical_speed;
-            (altitude.abs() - h_p) / rel_speed
-
-        // ownship is descending but intruder is climbing
-        } else if intruder.vertical_speed.is_sign_positive()
-            && ownship.vertical_speed.is_sign_negative()
-        // (...) == true
-{
-            //sanity checks
-            //println!("collision course.. climb and descend");
-            let rel_speed = intruder.vertical_speed - ownship.vertical_speed;
-            (altitude.abs() - h_p) / rel_speed
-
-            // if both are descending but intruder is slower than ownship so it catches up ((-5 ft/min) > (-15 ft/min) but |-5| < |-15|)
-        } else if ownship.vertical_speed.is_sign_negative()
-            && intruder.vertical_speed.is_sign_negative()
-        // (...) == true
-        {
-            //sanity checks
-            //println!("descend - catch up");
-            let rel_speed = ownship.vertical_speed.abs() - intruder.vertical_speed.abs();
-            (altitude.abs() - h_p) / rel_speed
-
-        // if any of has no vertical speed
-        /***** CHECK: .is_sign_positive/negative FOR COVERAGE OF 0.0!! *****/
-        } else {
-            Time::new::<second>(INFINITY)
-        }
-    // 1) if ownship climbing rate is higher than intruder (intruder.vertical_speed < ownship.vertical_speed)
-    // 1.1) ownship climbs faster than intruder -> not critical
-    // 1.2) ownship climbs while intruder falls -> not critical
-    // 1.3) both descend but ownship with a slower descending rate ((-5 ft/min) > (-15 ft/min) but |-5| < |-15|)
-    // 2) if they have no realtive speed (ownship.vertical_speed == intruder.vertical_speed)
-    } else {
-        Time::new::<second>(INFINITY)
-    }
-
-// if altitude difference is 0
-} else {
-    //println!("altitude is zero");
-    Time::new::<second>(0.0)
-}
-*/
 
 fn main() -> Result<(), Box<dyn Error>> {
     smol::block_on(async {
@@ -411,14 +243,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let psi = heading_angles(&user, &ai);
                 let (range, theta) = haversine(&user, &ai);
                 let tau_vertical = calc_tau_vertical(&user, &ai);
-                
+
                 // do inference for hcas
                 let (adv_h, _) = hcas.process_polar(tau_vertical, range, theta, psi);
                 hcas.last_advisory = adv_h;
-                
+
                 println!("Processed frame, time consumed: {:?}", now.elapsed(),);
                 println!("{:?}", adv_h);
-                
+
                 //new time
                 now = Instant::now();
 
@@ -427,14 +259,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let altitude_difference = relative_altitudes(&user, &ai);
                 let vertical_speed_user = user.vertical_speed; // needs to be foot per minute at inference
                 let vertical_speed_ai = ai.vertical_speed; // needs to be foot per minute
-                
+
                 // do inference for vcas
+                
                 let (adv_v, _) = vcas.process(
                     altitude_difference,
                     vertical_speed_user,
                     vertical_speed_ai,
                     tau_horizontal,
                 );
+
                 vcas.last_advisory = adv_v;
 
                 println!("Processed frame, time consumed: {:?}", now.elapsed(),);
@@ -477,24 +311,21 @@ fn main() -> Result<(), Box<dyn Error>> {
     })
 }
 
-
 #[cfg(test)]
 mod test {
     use super::*;
-    use uom::si::length::{kilometer};
+    use uom::si::length::kilometer;
     //use uom::si::velocity::{foot_per_second, knot}; //foot_per_minute //, time
 
-    
     #[test]
     pub fn test_hcas_processing() {
-
         //Instantiate HCAS
         let mut hcas = HCas {
             last_advisory: HAdvisory::ClearOfConflict,
         };
-        
+
         // Init Aircraft Structs
-        let user = AircraftState{
+        let user = AircraftState {
             groundspeed: Velocity::new::<knot>(8.0),
             vertical_speed: Velocity::new::<foot_per_second>(300.0),
             lat: Angle::new::<degree>(50.06638889),
@@ -503,7 +334,7 @@ mod test {
             heading: Angle::new::<degree>(345.0),
         };
 
-        let ai = AircraftState{
+        let ai = AircraftState {
             groundspeed: Velocity::new::<knot>(14.0),
             vertical_speed: Velocity::new::<foot_per_second>(500.0),
             lat: Angle::new::<degree>(50.14388889),
@@ -511,35 +342,33 @@ mod test {
             altitude: Length::new::<foot>(1000.0),
             heading: Angle::new::<degree>(250.0),
         };
-        
+
         // for sake of testing
+        /*
         println!("Print Primary Parameters: User");
         println!("Altitude {:?}", user.altitude.get::<foot>());
-        println!("Vertical Speed {:?}", user.vertical_speed.get::<foot_per_second>());
-        println!("Print Primary Parameters: AI");
-        println!("Altitude {:?}", ai.altitude.get::<foot>());
-        println!("Vertical Speed {:?}", ai.vertical_speed.get::<foot_per_second>());
-        /*
+        println!("Vertical Speed {:?}",user.vertical_speed.get::<foot_per_second>());
         println!("Groundspeed {:?}", user.groundspeed.get::<foot_per_second>());
         println!("Lattitude {:?}", user.lat.get::<degree>());
         println!("Longitude {:?}", user.lng.get::<degree>());
         println!("Heading {:?}", user.heading.get::<degree>());
-
+        
+        println!("Print Primary Parameters: AI");
+        println!("Altitude {:?}", ai.altitude.get::<foot>());
+        println!("Vertical Speed {:?}",ai.vertical_speed.get::<foot_per_second>());
         println!("Groundspeed {:?}", ai.groundspeed.get::<foot_per_second>());
         println!("Lattitude {:?}", ai.lat.get::<degree>());
         println!("Longitude {:?}", ai.lng.get::<degree>());
         println!("Heading {:?}", ai.heading.get::<degree>());
         */
         let now = Instant::now();
-        
+
         // Calculate params for networks
         let psi = heading_angles(&user, &ai);
         let (range, theta) = haversine(&user, &ai);
         let tau_vertical = calc_tau_vertical(&user, &ai);
-        //calc_tau_horizontal(&user, &ai);
         
-
-        println!("tau vertical: {:?}", tau_vertical);
+        //println!("tau vertical: {:?}", tau_vertical);
         //println!("range: {:?}", range.get::<kilometer>());
         //println!("theta: {:?}", theta.get::<degree>());
         //println!("psi: {:?}", psi.get::<degree>());
@@ -547,11 +376,10 @@ mod test {
         // do inference for hcas
         let (adv_h, _) = hcas.process_polar(tau_vertical, range, theta, psi);
         hcas.last_advisory = adv_h;
-        
+
         println!("Processed frame, time consumed: {:?}", now.elapsed());
         println!("{:?}", adv_h);
     }
-
 
     #[test]
     pub fn test_vcas_processing() {
@@ -561,7 +389,7 @@ mod test {
         };
 
         // Init Aircraft Structs
-let user = AircraftState{
+        let user = AircraftState {
             groundspeed: Velocity::new::<foot_per_second>(600.0),
             vertical_speed: Velocity::new::<foot_per_second>(300.0),
             lat: Angle::new::<degree>(50.06638889),
@@ -570,7 +398,7 @@ let user = AircraftState{
             heading: Angle::new::<degree>(45.0),
         };
 
-        let ai = AircraftState{
+        let ai = AircraftState {
             groundspeed: Velocity::new::<foot_per_second>(600.0),
             vertical_speed: Velocity::new::<foot_per_second>(500.0),
             lat: Angle::new::<degree>(50.14388889),
@@ -597,14 +425,14 @@ let user = AircraftState{
         println!("Altitude {:?}", ai.altitude);
         println!("Heading {:?}", ai.heading);
         */
-        
-        let now = Instant::now();        
+
+        let now = Instant::now();
 
         // Calculate params for networks
         let tau_horizontal = calc_tau_horizontal(&user, &ai);
         let altitude_difference = relative_altitudes(&user, &ai);
-        let vertical_speed_user = user.vertical_speed; 
-        let vertical_speed_ai = ai.vertical_speed; 
+        let vertical_speed_user = user.vertical_speed;
+        let vertical_speed_ai = ai.vertical_speed;
 
         // do inference for vcas
         let (adv_v, _) = vcas.process(
@@ -613,11 +441,10 @@ let user = AircraftState{
             vertical_speed_ai,
             tau_horizontal,
         );
+
         vcas.last_advisory = adv_v;
 
         println!("Processed frame, time consumed: {:?}", now.elapsed(),);
-        println!("{:?}", adv_v); 
+        println!("{:?}", adv_v);
     }
-
 }
-
