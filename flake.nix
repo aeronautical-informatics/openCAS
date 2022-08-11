@@ -24,24 +24,23 @@
           cargo = toolchain;
           rustc = toolchain;
         });
+        requiredLibs = with pkgs; [
+          libGL
+          xorg.libX11
+          xorg.libXcursor
+          xorg.libXi
+          xorg.libXrandr
+          xorg.libXxf86vm
+          xorg.libxcb
+        ] ++ lib.optionals stdenv.isLinux [
+          libxkbcommon
+          wayland
+        ];
+        libPath = lib.makeLibraryPath requiredLibs;
       in
       rec {
         # nix build
         packages.advisory_viewer =
-          let
-            rpathLibs = with pkgs; [
-              libGL
-              xorg.libX11
-              xorg.libXcursor
-              xorg.libXi
-              xorg.libXrandr
-              xorg.libXxf86vm
-              xorg.libxcb
-            ] ++ lib.optionals stdenv.isLinux [
-              libxkbcommon
-              wayland
-            ];
-          in
           naersk-lib.buildPackage rec {
             name = "advisory_viewer";
             src = ./.;
@@ -51,7 +50,7 @@
             #nativeBuildInputs = with pkgs; [ pkg-config ];
             overrideMain = (_: {
               postFixup = ''
-                patchelf --set-rpath "${lib.makeLibraryPath rpathLibs}" $out/bin/${name}
+                patchelf --set-rpath "${libPath}" $out/bin/${name}
               '';
             });
           };
@@ -79,11 +78,23 @@
             binaryen
             toolchain
             cargo-flamegraph
-            wasm-bindgen-cli
+            (wasm-bindgen-cli.overrideAttrs (prev: rec {
+              version = "0.2.82";
+              src = pkgs.fetchCrate {
+                inherit version;
+                inherit (prev) pname;
+                sha256 = "sha256-BQ8v3rCLUvyCCdxo5U+NHh30l9Jwvk9Sz8YQv6fa0SU=";
+              };
+              cargoDeps = prev.cargoDeps.overrideAttrs (lib.const {
+                name = "${prev.pname}-vendor.tar.gz";
+                inherit src;
+                outputHash = "sha256-ACo4zG+JK/fW6f9jpfTLPDUYqPqrt9Q2XgCF26jBXkg=";
+              });
+            }))
           ];
           buildInputs = packages.advisory_viewer.buildInputs;
+          LD_LIBRARY_PATH = libPath;
           shellHook = ''
-            export LD_LIBRARY_PATH="${pkgs.libGL}/lib"
             export IS_NIX_BUILD=true
           '';
         };
@@ -105,6 +116,5 @@
           '';
 
         };
-
       });
 }
