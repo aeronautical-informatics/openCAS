@@ -27,8 +27,8 @@ impl From<VisualizableKey> for Visualizable {
         match v {
             VisualizableKey::HCasCartesian => Visualizable {
                 viewee: v,
-                x_axis_index: 0,
-                y_axis_index: 1,
+                x_axis_index: 1,
+                y_axis_index: 2,
                 inputs: vec![
                     Input {
                         name: "τ",

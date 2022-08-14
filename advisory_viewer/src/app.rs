@@ -31,7 +31,7 @@ impl std::fmt::Display for Input {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Output {
     name: &'static str,
     description: &'static str,
@@ -65,8 +65,13 @@ impl Visualizable {
         self.outputs
             .iter()
             .enumerate()
-            .find(|(_, x)| *x == output)
-            .unwrap()
+            .find(|(_, x)| x.name == output.name)
+            .unwrap_or_else(|| {
+                panic!(
+                    "output {output:?} not found in outputs vector {:?}",
+                    self.outputs
+                )
+            })
             .0
     }
 
@@ -139,14 +144,14 @@ impl Visualizable {
     /// draw the config panel for this visualizable
     /// returns true, if a significant value changed
     fn draw_config(&mut self, ui: &mut egui::Ui) -> bool {
-        let previous_input_values = self.input_values.clone();
-        //let old_pra = self.pra;
-        //let old_inputs = self.inputs.clone();
+        let old_input_values = self.input_values.clone();
+        let old_pra = self.pra;
         egui::Grid::new("gui_settings_grid")
             .num_columns(2)
             .striped(true)
             .show(ui, |ui| {
-                ui.label("X-Axis Selector");
+                ui.label("X-Axis Selector")
+                    .on_hover_text(self.inputs[self.x_axis_index].description);
 
                 // calculate the maximum width for the combo boxes
                 let original_spacing = ui.spacing().clone();
@@ -161,7 +166,8 @@ impl Visualizable {
                     });
                 ui.end_row();
 
-                ui.label("Y-Axis Selector");
+                ui.label("Y-Axis Selector")
+                    .on_hover_text(self.inputs[self.y_axis_index].description);
                 egui::ComboBox::from_id_source("y_axis_combo")
                     .selected_text(self.y_axis().name)
                     .show_ui(ui, |ui| {
@@ -184,9 +190,9 @@ impl Visualizable {
                 // reset width, since the combination of slider and drag value doesn't behave
                 *ui.spacing_mut() = original_spacing;
 
+                // add inputs for the actual input values
                 let drag_value_speed = 1e-2;
                 let mut size = (0.0, 0.0);
-                // add inputs for the actual input values
                 for (idx, input) in &mut self
                     .inputs
                     .iter()
@@ -217,20 +223,21 @@ impl Visualizable {
                         ui.available_width() / 2.0 - ui.spacing().button_padding.x,
                         ui.spacing().interact_size.y,
                     );
+
                     // TODO the following is an ugly hack to get left and right aligned elements in
                     // the same row.
                     ui.horizontal_wrapped(|ui| {
                         ui.add_sized(
                             size,
                             DragValue::new(&mut min)
-                                .clamp_range(f32::MIN..=max)
+                                .clamp_range(f32::MIN..=max - f32::EPSILON)
                                 .speed(drag_value_speed),
                         );
                         ui.with_layout(egui::Layout::right_to_left(Align::LEFT), |ui| {
                             ui.add_sized(
                                 size,
                                 DragValue::new(&mut max)
-                                    .clamp_range(min..=f32::MAX)
+                                    .clamp_range(min + f32::EPSILON..=f32::MAX)
                                     .speed(drag_value_speed),
                             );
                         });
@@ -251,8 +258,8 @@ impl Visualizable {
                         ui.color_edit_button_srgba(&mut o.color);
                         if ui.button("reset").clicked() {
                             let default_viewee: Visualizable = self.viewee.into();
-                            o.color =
-                                default_viewee.outputs[default_viewee.output_to_index(o)].color;
+                            let idx = default_viewee.output_to_index(o);
+                            o.color = default_viewee.outputs[idx].color;
                         }
                     });
                     ui.end_row();
@@ -277,8 +284,12 @@ impl Visualizable {
                         .clamp_range(self.min_level..=15) // 2 ** (15 * 2) is equivalent to more than 1 giga pixel in resolution, that should suffice
                         .speed(level_speed),
                 );
+                ui.end_row();
+                if ui.button("reset all").clicked() {
+                    *self = self.viewee.into()
+                }
             });
-        self.input_values != previous_input_values
+        self.input_values != old_input_values || self.pra != old_pra
     }
 }
 
@@ -364,13 +375,6 @@ impl eframe::App for TemplateApp {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
-                ui.menu_button("Choose Viewee", |ui| {
-                    for k in self.viewers.keys() {
-                        if ui.button(k.as_ref()).clicked() {
-                            self.viewer_key = *k;
-                        }
-                    }
-                });
                 ui.menu_button("Theme", |ui| {
                     if ui.button("Dark").clicked() {
                         ctx.set_visuals(egui::Visuals::dark());
@@ -379,6 +383,13 @@ impl eframe::App for TemplateApp {
                         ctx.set_visuals(egui::Visuals::light());
                     }
                 });
+
+                ui.separator();
+                for k in self.viewers.keys() {
+                    if ui.button(k.as_ref()).clicked() {
+                        self.viewer_key = *k;
+                    }
+                }
             });
         });
 
@@ -391,6 +402,27 @@ impl eframe::App for TemplateApp {
                 if viewer.draw_config(ui) {
                     self.last_viewer_config = None;
                 }
+
+                // help menu
+                ui.separator();
+
+                ui.heading("Plot Usage");
+                egui::Grid::new("gui_help_grid")
+                    .num_columns(2)
+                    .striped(true)
+                    .show(ui, |ui| {
+                        let hints = [
+                            ("Left-Click + Mousedrag", "move the plot arround"),
+                            ("Mousewheel", "move plot vertical"),
+                            ("Mousewheel + Shift", "move plot horizontally"),
+                            ("Mousehweel + Control", "zoom plot in/out"),
+                        ];
+                        for (key, action) in hints {
+                            ui.label(key);
+                            ui.label(action);
+                            ui.end_row();
+                        }
+                    });
             });
         });
 
