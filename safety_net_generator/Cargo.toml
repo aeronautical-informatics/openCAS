@@ -1,0 +1,19 @@
+[package]
+name = "safety_net_generator"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.61"
+clap = { version = "3.2", features = ["derive"] }
+crossbeam = { version = "0.8", features = [ "crossbeam-channel" ]}
+log = "0.4.17"
+num_cpus = "1.13.1"
+pretty_env_logger = "0.4.0"
+regex = "1.6.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0"
+uom = {version = "*", features = ["serde"] }
+

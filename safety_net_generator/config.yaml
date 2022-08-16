@@ -1,0 +1,8 @@
+batch_size: 10000000000
+result_dir: result
+hcas_config:
+  x: [ -23e3, 10.0, 23e3 ]
+  y: [ 0, 10, 56e3 ]
+  tau: [ 0.0, 10.0, 60.0 ]
+  rel_bearing: [ 0.0, 1.0, 359.0 ]
+  batch_size: 960000000
