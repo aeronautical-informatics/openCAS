@@ -182,12 +182,12 @@ impl TryFrom<u8> for VAdvisory {
             0 => Self::ClearOfConflict,
             1 => Self::DoNotClimb,
             2 => Self::DoNotDescend,
-            3 => Self::Climb1500,
-            4 => Self::Descend1500,
-            5 => Self::StrengthenClimb1500,
-            6 => Self::StrengthenDescend1500,
-            7 => Self::StrengthenClimb2500,
-            8 => Self::StrengthenDescend2500,
+            3 => Self::Descend1500,
+            4 => Self::Climb1500,
+            5 => Self::StrengthenDescend1500,
+            6 => Self::StrengthenClimb1500,
+            7 => Self::StrengthenDescend2500,
+            8 => Self::StrengthenClimb2500,
             _ => return Err(()),
         })
     }
@@ -234,6 +234,8 @@ impl VCas {
 
 #[cfg(test)]
 mod test {
+    use uom::si::velocity::foot_per_second;
+
     use super::*;
     use core::mem::size_of_val;
 
@@ -253,5 +255,31 @@ mod test {
             size <= 1 << 19,
             "The size of the VCAS_NNETS is bigger than 512 KiB"
         );
+    }
+    #[test]
+    pub fn check_vcas_outputs() {
+        //Instantiate VCAS
+        let mut vcas = VCas {
+            last_advisory: VAdvisory::ClearOfConflict,
+        };
+
+        let height= Length::new::<foot>(100.0);
+        let vertical_speed_homeship = Velocity::new::<foot_per_second>(0.0);
+        let vertical_speed_intruder= Velocity::new::<foot_per_second>(0.0);
+        let tau = Time::new::<second>(20.0);
+
+        // do inference for vcas
+        let (adv_v, _) = vcas.process(
+            height,
+            vertical_speed_homeship,
+            vertical_speed_intruder,
+            tau,
+        );
+
+        vcas.last_advisory = adv_v;
+
+        //println!("Processed frame, time consumed: {:?}", now.elapsed(),);
+        println!("{:?}", adv_v);
+        println!("{:?}", vcas.last_advisory);
     }
 }
