@@ -3,7 +3,7 @@ use atomic_counter::{AtomicCounter, RelaxedCounter};
 use std::ops::{Deref, DerefMut, Range, RangeInclusive};
 use std::sync::{Arc, RwLock};
 
-use egui::{Color32, ColorImage, TextureFilter, TextureHandle};
+use egui::{Color32, ColorImage, TextureHandle, TextureOptions};
 use uuid::Uuid;
 
 use super::{ViewerConfig, ViewerFn, ViewerOutput};
@@ -71,7 +71,7 @@ impl VisualizerBackend {
                 lock.deref_mut().0 = tree.clone();
                 texture.set(
                     ColorImage::new([side_length, side_length], Color32::TRANSPARENT),
-                    TextureFilter::Nearest,
+                    TextureOptions::NEAREST,
                 );
                 level_done.store(Arc::new(1));
             }
@@ -148,7 +148,7 @@ impl VisualizerNode {
             texture.clone().set_partial(
                 [self.x_pixel_range.start, size[1] - self.y_pixel_range.end],
                 ColorImage::new([self.x_pixel_range.len(), self.y_pixel_range.len()], color),
-                egui::TextureFilter::Nearest,
+                TextureOptions::NEAREST,
             );
         }
     }

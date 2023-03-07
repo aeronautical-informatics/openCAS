@@ -11,8 +11,8 @@ license = "MIT OR Apache-2.0"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-egui = "0.18"
-eframe = { version = "0.18", features = [ "persistence" ] }
+egui = "0.21"
+eframe = { version = "0.21", features = [ "persistence" ] }
 serde = { version = "1", features = ["derive"] }
 
 opencas = { path = "../opencas" }
@@ -20,9 +20,9 @@ uuid = { version = "1", features = [ "v4" ] }
 uom = "*"
 arc-swap = "1.5" #For atomic double buffers
 atomic-counter = "1.0" #Track progress of image generator
-ordered-float = "2.10"
+# ordered-float = "3.4"
 strum = { version = "0", features = [ "derive" ] }
-frunk = "0"
+# frunk = "0"
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

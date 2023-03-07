@@ -2,7 +2,7 @@ use std::{collections::HashMap, ops::RangeInclusive};
 
 use egui::{
     self, plot::Plot, plot::PlotImage, Align, Color32, ColorImage, DragValue, ProgressBar,
-    TextureFilter, TextureHandle,
+    TextureHandle, TextureOptions,
 };
 use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
@@ -468,7 +468,7 @@ impl eframe::App for TemplateApp {
             let texture_handle = self.texture_handle.get_or_insert(ctx.load_texture(
                 "plot",
                 ColorImage::new([1, 1], default_color),
-                TextureFilter::Nearest,
+                TextureOptions::NEAREST,
             ));
 
             let (x_min, x_max) = new_viewer_config.x_axis_range.clone().into_inner();
