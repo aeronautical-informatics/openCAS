@@ -221,7 +221,7 @@ impl VCas {
 
         // evaluate the network
         let evaluated = nnet.eval(inputs);
-        
+
         // find highest value within the the return vector
         let priority = evaluated.max();
 
