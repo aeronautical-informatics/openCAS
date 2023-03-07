@@ -1,9 +1,10 @@
 {
   inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     utils.url = "github:numtide/flake-utils";
     fenix.url = "github:nix-community/fenix";
     fenix.inputs.nixpkgs.follows = "nixpkgs";
-    naersk.url = "github:nmattia/naersk";
+    naersk.url = "github:nix-community/naersk";
     naersk.inputs.nixpkgs.follows = "nixpkgs";
   };
 
@@ -24,36 +25,33 @@
           cargo = toolchain;
           rustc = toolchain;
         });
-        requiredLibs = with pkgs; [
-          libGL
-          xorg.libX11
-          xorg.libXcursor
-          xorg.libXi
-          xorg.libXrandr
-          xorg.libXxf86vm
-          xorg.libxcb
-        ] ++ lib.optionals stdenv.isLinux [
-          libxkbcommon
-          wayland
-        ];
+        requiredLibs = with pkgs;
+          [
+            libGL
+            xorg.libX11
+            xorg.libXcursor
+            xorg.libXi
+            xorg.libXrandr
+            xorg.libXxf86vm
+            xorg.libxcb
+          ] ++ lib.optionals stdenv.isLinux [ libxkbcommon wayland ];
         libPath = lib.makeLibraryPath requiredLibs;
       in
       rec {
         # nix build
-        packages.advisory_viewer =
-          naersk-lib.buildPackage rec {
-            name = "advisory_viewer";
-            src = ./.;
-            doCheck = true;
-            cargoBuildOptions = x: x ++ [ "-p" name ];
-            cargoTestOptions = x: x ++ [ "-p" name ];
-            #nativeBuildInputs = with pkgs; [ pkg-config ];
-            overrideMain = (_: {
-              postFixup = ''
-                patchelf --set-rpath "${libPath}" $out/bin/${name}
-              '';
-            });
-          };
+        packages.advisory_viewer = naersk-lib.buildPackage rec {
+          name = "advisory_viewer";
+          src = ./.;
+          doCheck = true;
+          cargoBuildOptions = x: x ++ [ "-p" name ];
+          cargoTestOptions = x: x ++ [ "-p" name ];
+          # nativeBuildInputs = with pkgs; [ pkg-config ];
+          overrideMain = (_: {
+            postFixup = ''
+              patchelf --set-rpath "${libPath}" $out/bin/${name}
+            '';
+          });
+        };
         packages.opencas = naersk-lib.buildPackage rec {
           name = "opencas";
           src = ./.;
@@ -67,11 +65,17 @@
         };
 
         # nix run
-        apps.advisory_viewer = utils.lib.mkApp rec { name = "advisory_viewer"; drv = packages.${name}; };
+        apps.advisory_viewer = utils.lib.mkApp rec {
+          name = "advisory_viewer";
+          drv = packages.${name};
+        };
 
         # nix develop
         devShells.default = pkgs.mkShell {
-          inputsFrom = with self.packages.${system}; [ advisory_viewer opencas ];
+          inputsFrom = with self.packages.${system}; [
+            advisory_viewer
+            opencas
+          ];
           nativeBuildInputs = with pkgs; [
             binaryen
             httplz
@@ -88,7 +92,8 @@
               cargoDeps = prev.cargoDeps.overrideAttrs (lib.const {
                 name = "${prev.pname}-vendor.tar.gz";
                 inherit src;
-                outputHash = "sha256-ACo4zG+JK/fW6f9jpfTLPDUYqPqrt9Q2XgCF26jBXkg=";
+                outputHash =
+                  "sha256-ACo4zG+JK/fW6f9jpfTLPDUYqPqrt9Q2XgCF26jBXkg=";
               });
             }))
           ];
@@ -107,13 +112,13 @@
             ( cd ${./.} && cargo fmt --check )
             touch $out
           '';
-          clippy = pkgs.runCommand "clippy"
-            {
-              nativeBuildInputs = [ toolchain ];
-            } ''
-            ( cd ${./.} && cargo clippy )
-            touch $out
-          '';
+          # clippy = pkgs.runCommand "clippy"
+          #   {
+          #     nativeBuildInputs = [ toolchain ];
+          #   } ''
+          #   ( cd ${./.} && cargo clippy )
+          #   touch $out
+          # '';
 
         };
       });
