@@ -5,3 +5,11 @@ members = [
     "opencas",
     "advisory_viewer",
 ]
+
+
+# remove once https://github.com/emilk/egui/pull/1338 lands in a release
+[patch.crates-io]
+
+# If you want to use the bleeding edge version of egui and eframe:
+# egui = { git = "https://github.com/emilk/egui", branch = "master" }
+# eframe = { git = "https://github.com/emilk/egui", branch = "master" }

@@ -3,10 +3,10 @@ use atomic_counter::{AtomicCounter, RelaxedCounter};
 use std::ops::{Deref, DerefMut, Range, RangeInclusive};
 use std::sync::{Arc, RwLock};
 
-use egui::{Color32, ColorImage, TextureHandle};
+use egui::{Color32, ColorImage, TextureHandle, TextureOptions};
 use uuid::Uuid;
 
-use super::ViewerConfig;
+use super::{ViewerConfig, ViewerFn, ViewerOutput};
 
 pub struct Status {
     pub current_level: usize,
@@ -34,12 +34,7 @@ impl Default for VisualizerBackend {
 }
 
 impl VisualizerBackend {
-    pub fn start_with(
-        &self,
-        config: ViewerConfig,
-        mut texture: TextureHandle,
-        f: Box<dyn Fn(f32, f32) -> u8 + Send + Sync>,
-    ) {
+    pub fn start_with(&self, config: ViewerConfig, mut texture: TextureHandle, f: ViewerFn) {
         let uuid = Uuid::new_v4();
         let data = self.data.clone();
         let quad_counter = self.quad_counter.clone();
@@ -74,10 +69,10 @@ impl VisualizerBackend {
                     return;
                 }
                 lock.deref_mut().0 = tree.clone();
-                texture.set(ColorImage::new(
-                    [side_length, side_length],
-                    Color32::TRANSPARENT,
-                ));
+                texture.set(
+                    ColorImage::new([side_length, side_length], Color32::TRANSPARENT),
+                    TextureOptions::NEAREST,
+                );
                 level_done.store(Arc::new(1));
             }
 
@@ -129,7 +124,7 @@ impl VisualizerBackend {
 
 #[derive(Clone)]
 pub struct VisualizerNode {
-    value: u8,
+    value: ViewerOutput,
     x_range: RangeInclusive<f32>,
     y_range: RangeInclusive<f32>,
     x_pixel_range: Range<usize>,
@@ -153,6 +148,7 @@ impl VisualizerNode {
             texture.clone().set_partial(
                 [self.x_pixel_range.start, size[1] - self.y_pixel_range.end],
                 ColorImage::new([self.x_pixel_range.len(), self.y_pixel_range.len()], color),
+                TextureOptions::NEAREST,
             );
         }
     }
@@ -170,7 +166,7 @@ impl VisualizerNode {
         }
     }
 
-    fn gen_value(mut self, f: &(dyn Fn(f32, f32) -> u8 + Send + Sync)) -> Self {
+    fn gen_value(mut self, f: &(dyn Fn(f32, f32) -> ViewerOutput + Send + Sync)) -> Self {
         let mid_x = (self.x_range.end() + self.x_range.start()) / 2f32;
         let mid_y = (self.y_range.end() + self.y_range.start()) / 2f32;
         self.value = f(mid_x, mid_y);
@@ -179,7 +175,7 @@ impl VisualizerNode {
 
     fn gen_children_rec(
         &self,
-        f: &(dyn Fn(f32, f32) -> u8 + Send + Sync),
+        f: &(dyn Fn(f32, f32) -> ViewerOutput + Send + Sync),
         level: usize,
         valid: &(dyn Fn() -> bool + Send + Sync),
         counter: &RelaxedCounter,
@@ -201,7 +197,7 @@ impl VisualizerNode {
         }
     }
 
-    fn gen_children(&self, f: &(dyn Fn(f32, f32) -> u8 + Send + Sync)) {
+    fn gen_children(&self, f: &(dyn Fn(f32, f32) -> ViewerOutput + Send + Sync)) {
         let mid_x = (self.x_range.end() + self.x_range.start()) / 2f32;
         let mid_y = (self.y_range.end() + self.y_range.start()) / 2f32;
         let mid_x_pixel = (self.x_pixel_range.end + self.x_pixel_range.start) / 2;
@@ -243,7 +239,7 @@ impl VisualizerNode {
             .store(Arc::new(Some([tl, tr, bl, br].map(|c| c.gen_value(f)))));
     }
 
-    fn corners_are_identical(&self, f: &(dyn Fn(f32, f32) -> u8 + Send + Sync)) -> bool {
+    fn corners_are_identical(&self, f: &(dyn Fn(f32, f32) -> ViewerOutput + Send + Sync)) -> bool {
         let bl = f(*self.x_range.start(), *self.y_range.start());
         let tl = f(*self.x_range.start(), *self.y_range.end());
         let tr = f(*self.x_range.end(), *self.y_range.end());
@@ -261,7 +257,7 @@ impl VisualizerNode {
           } */
     }
 
-    fn self_and_descendants_are(&self, v: u8) -> bool {
+    fn self_and_descendants_are(&self, v: ViewerOutput) -> bool {
         if self.value != v {
             return false;
         }

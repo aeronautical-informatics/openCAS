@@ -11,25 +11,28 @@ license = "MIT OR Apache-2.0"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-egui = { features = [ "multi_threaded" ], git = "https://github.com/wucke13/egui", branch = "dev/wucke13" }
-eframe = { features = [ "persistence" ], git = "https://github.com/wucke13/egui", branch = "dev/wucke13" }
-opencas = { path = "../opencas" }
-uuid = { version = "0.8", features = [ "v4" ] }
-uom = "*"
-arc-swap = "1.5" #For atomic double buffers
-#kd-tree = "0.4" #KD Tree implementation for dynamic image calculation
-atomic-counter = "1.0" #Track progress of image generator
-ordered-float = "2.10"
-strum = { version = "0", features = [ "derive" ] }
-
+egui = "0.21"
+eframe = { version = "0.21", features = [ "persistence" ] }
 serde = { version = "1", features = ["derive"] }
 
+opencas = { path = "../opencas" }
+uuid = { version = "1", features = [ "v4" ] }
+uom = "*"
+arc-swap = "1.5" #For atomic double buffers
+atomic-counter = "1.0" #Track progress of image generator
+# ordered-float = "3.4"
+strum = { version = "0", features = [ "derive" ] }
+# frunk = "0"
+
+# native:
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tracing-subscriber = "0.3"
+futures = "0.3"
+
+# web:
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.6"
 tracing-wasm = "0.2"
-uuid = { version = "0.8", features = [ "v4", "wasm-bindgen"] }
-wasm-bindgen-futures = " 0.4"
-
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-futures = "0.3"
+wasm-bindgen-futures = "0.4"
+getrandom = { version = "*", features = [ "js" ] }
+uuid = { version = "*", features = [ "js" ] }

@@ -182,12 +182,12 @@ impl TryFrom<u8> for VAdvisory {
             0 => Self::ClearOfConflict,
             1 => Self::DoNotClimb,
             2 => Self::DoNotDescend,
-            3 => Self::Climb1500,
-            4 => Self::Descend1500,
-            5 => Self::StrengthenClimb1500,
-            6 => Self::StrengthenDescend1500,
-            7 => Self::StrengthenClimb2500,
-            8 => Self::StrengthenDescend2500,
+            3 => Self::Descend1500,
+            4 => Self::Climb1500,
+            5 => Self::StrengthenDescend1500,
+            6 => Self::StrengthenClimb1500,
+            7 => Self::StrengthenDescend2500,
+            8 => Self::StrengthenClimb2500,
             _ => return Err(()),
         })
     }
@@ -253,5 +253,20 @@ mod test {
             size <= 1 << 19,
             "The size of the VCAS_NNETS is bigger than 512 KiB"
         );
+    }
+
+    #[test]
+    pub fn test_index() {
+        let mut vcas = VCas {
+            last_advisory: VAdvisory::StrengthenDescend2500,
+        };
+        let (adv, value) = vcas.process(
+            Length::new::<foot>(0.0),
+            Velocity::new::<foot_per_minute>(0.0),
+            Velocity::new::<foot_per_minute>(0.0),
+            Time::new::<second>(15.0),
+        );
+
+        println!("adv: {:#?} and value: {:#?}", adv, value);
     }
 }
