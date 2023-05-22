@@ -4,6 +4,7 @@ resolver = "2"
 members = [
     "opencas",
     "advisory_viewer",
+    "cas_calculation",
 ]
 
 

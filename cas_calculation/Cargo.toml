@@ -1,0 +1,11 @@
+[package]
+name = "cas_calculation"
+version = "0.1.0"
+authors = ["Wanja Zaeske <wanja.zaeske@dlr.de>"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+opencas = { path = "../opencas" }
+uom = "*"
