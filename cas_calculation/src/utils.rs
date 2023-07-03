@@ -104,8 +104,8 @@ pub fn calc_tau_horizontal(ownship: &AircraftState, intruder: &AircraftState) ->
     let v_sidewrd_intruder = intruder.groundspeed * intruder.heading.sin();
 
     // Speed relative to ownship V_io
-    let v_fwrd = v_fwrd_intruder - v_fwrd_ownship;
-    let v_sdwrd = v_sidewrd_intruder - v_sidewrd_ownship;
+    let v_fwrd = v_fwrd_ownship - v_fwrd_intruder;
+    let v_sdwrd = v_sidewrd_ownship - v_sidewrd_intruder;
 
     // do I need to do the mathematical conversion here or can I just trust the uom lib to do it correctly afterwards?
     let v_rel = Velocity::new::<foot_per_second>(
@@ -113,12 +113,12 @@ pub fn calc_tau_horizontal(ownship: &AircraftState, intruder: &AircraftState) ->
     );
 
     // get x/y direction for vector math
-    let x_direction = (range - r_p) * (-theta).sin();
-    let y_direction = (range - r_p) * (-theta).cos();
+    let x_direction = (range - r_p) * (theta).sin();
+    let y_direction = (range - r_p) * (theta).cos();
 
     // math from "Collision Avoidance Law Using Information Amount" Seiya Ueno and Takehiro Higuchi
     let tau =
-        -(x_direction * v_sdwrd + y_direction * v_fwrd) / (v_sdwrd * v_sdwrd + v_fwrd * v_fwrd);
+        -(x_direction * v_sdwrd - y_direction * v_fwrd) / (v_sdwrd * v_sdwrd + v_fwrd * v_fwrd);
     
         tau
     }
