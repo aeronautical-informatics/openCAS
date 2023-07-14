@@ -4,8 +4,8 @@ use uom::si::angle::{degree, radian}; // self,
 use uom::si::f32::Time;
 use uom::si::f32::*;
 use uom::si::length::{foot, meter};
-use uom::si::time::second; //Time
-use uom::si::velocity::{foot_per_second, knot}; //foot_per_minute //, time
+// use uom::si::time::second; //Time
+// use uom::si::velocity::{foot_per_second, knot}; //foot_per_minute //, time
 
 /// AircraftState:
 /// state parameters of any given aircraft needed for OpenCAS
@@ -20,13 +20,13 @@ pub struct AircraftState {
 }
 
 /// Haversine
-/// 
-/// Output: 
-/// 
+///
+/// Output:
+///
 /// + Range ρ - distance between ownship and intruder (absolute distance)
 /// + Theta θ - angle from heading of ownship to intruder (positive - from north counterclockwise)
-/// 
-/// example: 
+///
+/// example:
 /// + intruder is in front of ownship -> theta = 0 degrees
 /// + intruder is left of ownship -> theta = 90 degrees
 /// + intruder is right of ownship -> theta = 270 degrees
@@ -65,7 +65,7 @@ pub fn haversine(ownship: &AircraftState, intruder: &AircraftState) -> (Length, 
     );
     // check if initial bearing is correct (checked with online tool - see reference above)
     //println!("bearing: {:?}", bearing * 180.0 / PI);
-    
+
     // this step takes into account that signed addition happens (theta > 180deg => -(360 -x); vise versa)
     let theta = Angle::new::<radian>(match ownship.heading.get::<radian>() - bearing {
         b if b < PI => b,
@@ -76,12 +76,12 @@ pub fn haversine(ownship: &AircraftState, intruder: &AircraftState) -> (Length, 
 }
 
 /// Relative heading between intruder and ownship
-/// 
+///
 /// Output:
-/// 
+///
 /// Psi ψ - angle between heading of ownship and heading of intruder (possitive - from north counterclockwise)
-/// 
-/// example: 
+///
+/// example:
 /// + both have the same heading -> psi = 0 degrees
 /// + intruder flies perpendicular to the left of ownship -> psi = 90 degrees
 
@@ -104,9 +104,9 @@ pub fn heading_angles(ownship: &AircraftState, intruder: &AircraftState) -> Angl
 }
 
 /// Relative Altitude
-/// 
+///
 /// Output:
-/// 
+///
 /// Height difference h - height between ownship and intruder (positive - ownship above intruder)
 
 // calculate relative altitudes between intruder and ownship
@@ -115,11 +115,10 @@ pub fn relative_altitudes(ownship: &AircraftState, intruder: &AircraftState) -> 
     intruder.altitude - ownship.altitude
 }
 
-
 /// Time until horizontal separation is lost
-/// 
+///
 /// Output:
-/// 
+///
 /// Tau_horizontal τ - calculation based on CPA (closest point of aproach)
 
 // calculate tau until horizontal collision THE HARDEST CALCULATION OF THEM ALL...
@@ -154,18 +153,17 @@ pub fn calc_tau_horizontal(ownship: &AircraftState, intruder: &AircraftState) ->
     // math from "Collision Avoidance Law Using Information Amount" Seiya Ueno and Takehiro Higuchi
     let tau =
         -(x_direction * v_sdwrd - y_direction * v_fwrd) / (v_sdwrd * v_sdwrd + v_fwrd * v_fwrd);
-    
-        tau
-    }
 
-    
+    tau
+}
+
 /// Time until vertical separation is lost
-/// 
+///
 /// Output:
-/// 
+///
 /// Tau_vertical τ
 
-// calculate tau until vertical collision 
+// calculate tau until vertical collision
 pub fn calc_tau_vertical(ownship: &AircraftState, intruder: &AircraftState) -> Time {
     // first, get relative altitudes
     let h_p = Length::new::<foot>(100.0); // safety margin above and below ownship
