@@ -7,7 +7,8 @@ use uom::si::length::{foot, meter};
 use uom::si::time::second; //Time
 use uom::si::velocity::{foot_per_second, knot}; //foot_per_minute //, time
 
-
+/// AircraftState:
+/// state parameters of any given aircraft needed for OpenCAS
 #[derive(Clone, Default)]
 pub struct AircraftState {
     pub groundspeed: Velocity,
@@ -17,6 +18,18 @@ pub struct AircraftState {
     pub altitude: Length,
     pub heading: Angle,
 }
+
+/// Haversine
+/// 
+/// Output: 
+/// 
+/// + Range ρ - distance between ownship and intruder (absolute distance)
+/// + Theta θ - angle from heading of ownship to intruder (positive - from north counterclockwise)
+/// 
+/// example: 
+/// + intruder is in front of ownship -> theta = 0 degrees
+/// + intruder is left of ownship -> theta = 90 degrees
+/// + intruder is right of ownship -> theta = 270 degrees
 
 // 1.: do lat/lon conversion to distance with haversine formula
 // formula is:
@@ -62,8 +75,17 @@ pub fn haversine(ownship: &AircraftState, intruder: &AircraftState) -> (Length, 
     //ranging error ~1% which is surprisingly high => maybe f32 not precise enough?
 }
 
-// calculate relative heading angles between intruder and ownship
-/* If I am correct, the aviation industry measures the heading angle clockwise
+/// Relative heading between intruder and ownship
+/// 
+/// Output:
+/// 
+/// Psi ψ - angle between heading of ownship and heading of intruder (possitive - from north counterclockwise)
+/// 
+/// example: 
+/// + both have the same heading -> psi = 0 degrees
+/// + intruder flies perpendicular to the left of ownship -> psi = 90 degrees
+
+/* The aviation industry measures the heading angle clockwise
 while the nerual network expects values counter-clockwise (mathmetical sense)
 therefore, you need an angle conversion from clockwise to counter-clockwise while
 still representing the relative angle between ownship and intruder correctly */
@@ -81,13 +103,26 @@ pub fn heading_angles(ownship: &AircraftState, intruder: &AircraftState) -> Angl
     // Paper says it is in degrees, trained networks say it is in radian  -> whats the training data?
 }
 
+/// Relative Altitude
+/// 
+/// Output:
+/// 
+/// Height difference h - height between ownship and intruder (positive - ownship above intruder)
+
 // calculate relative altitudes between intruder and ownship
 // If value positive => Intruder above ownship - else below
 pub fn relative_altitudes(ownship: &AircraftState, intruder: &AircraftState) -> Length {
     intruder.altitude - ownship.altitude
 }
 
-// calculate tau until horizontal collision THE HARDEST CALCULATIO OF THEM ALL...
+
+/// Time until horizontal separation is lost
+/// 
+/// Output:
+/// 
+/// Tau_horizontal τ - calculation based on CPA (closest point of aproach)
+
+// calculate tau until horizontal collision THE HARDEST CALCULATION OF THEM ALL...
 // After a lot of confusion and consideration, the final decision comes from the paper
 // "Julian/Sharma/Jeannin/Kochenderfer: Verifying Aircraft Collision Avoidance Neural Networks Through Linear Approximations of Safe Regions"
 // which states that tau is equal to tau = (r - r_p)/v_rel
@@ -108,9 +143,9 @@ pub fn calc_tau_horizontal(ownship: &AircraftState, intruder: &AircraftState) ->
     let v_sdwrd = v_sidewrd_ownship - v_sidewrd_intruder;
 
     // do I need to do the mathematical conversion here or can I just trust the uom lib to do it correctly afterwards?
-    let v_rel = Velocity::new::<foot_per_second>(
-        (v_fwrd.get::<foot_per_second>().powi(2) + v_sdwrd.get::<foot_per_second>().powi(2)).sqrt(),
-    );
+    // let v_rel = Velocity::new::<foot_per_second>(
+    //     (v_fwrd.get::<foot_per_second>().powi(2) + v_sdwrd.get::<foot_per_second>().powi(2)).sqrt(),
+    // );
 
     // get x/y direction for vector math
     let x_direction = (range - r_p) * (theta).sin();
@@ -122,15 +157,15 @@ pub fn calc_tau_horizontal(ownship: &AircraftState, intruder: &AircraftState) ->
     
         tau
     }
-    /*
-    let alpha_rel = v_fwrd.atan2(v_sdwrd);
-    println!("v_rel über alter Ansatz: {:?}", v_rel.get::<knot>());
-    println!("v_fwrd über alter Ansatz: {:?}", v_fwrd.get::<knot>());
-    println!("v_sdwrd über alter Ansatz: {:?}", v_sdwrd.get::<knot>());
-    println!("alpha_rel über alter Ansatz: {:?}", alpha_rel.get::<degree>());
-    */
+
     
-/// calculate tau until vertical collision 
+/// Time until vertical separation is lost
+/// 
+/// Output:
+/// 
+/// Tau_vertical τ
+
+// calculate tau until vertical collision 
 pub fn calc_tau_vertical(ownship: &AircraftState, intruder: &AircraftState) -> Time {
     // first, get relative altitudes
     let h_p = Length::new::<foot>(100.0); // safety margin above and below ownship
