@@ -2666,8 +2666,7 @@ dependencies = [
 [[package]]
 name = "uom"
 version = "0.34.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8f50eddd69f656ee545f7663ea5fefb7c789bc1a0d11124e049715f563a16a4"
+source = "git+https://github.com/wucke13/uom.git?branch=fix-missing-libm#b43eed64e5d983e12a7cb07d5e2f58addee8a2b2"
 dependencies = [
  "num-traits",
  "typenum",

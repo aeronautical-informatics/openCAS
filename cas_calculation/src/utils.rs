@@ -1,4 +1,3 @@
-#[no_std]
 use core::f32::consts::PI;
 use uom::si::angle::{degree, radian}; // self,
 use uom::si::f32::Time;
