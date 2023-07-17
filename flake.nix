@@ -77,25 +77,9 @@
             opencas
           ];
           nativeBuildInputs = with pkgs; [
-            binaryen
-            httplz
-            binaryen
-            toolchain
-            cargo-flamegraph
-            (wasm-bindgen-cli.overrideAttrs (prev: rec {
-              version = "0.2.82";
-              src = pkgs.fetchCrate {
-                inherit version;
-                inherit (prev) pname;
-                sha256 = "sha256-BQ8v3rCLUvyCCdxo5U+NHh30l9Jwvk9Sz8YQv6fa0SU=";
-              };
-              cargoDeps = prev.cargoDeps.overrideAttrs (lib.const {
-                name = "${prev.pname}-vendor.tar.gz";
-                inherit src;
-                outputHash =
-                  "sha256-ACo4zG+JK/fW6f9jpfTLPDUYqPqrt9Q2XgCF26jBXkg=";
-              });
-            }))
+            cargo-flamegraph # for performance stuff
+            toolchain # our rust toolchain
+            trunk # for web stuff
           ];
           buildInputs = packages.advisory_viewer.buildInputs;
           LD_LIBRARY_PATH = libPath;

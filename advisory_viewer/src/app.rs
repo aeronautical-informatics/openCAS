@@ -443,7 +443,7 @@ impl eframe::App for TemplateApp {
             ctx.request_repaint();
         }
 
-        let progress = quads_evaluated as f32 / initial_quads as f32;
+        let progress = quads_evaluated as f32 / initial_quads;
         egui::TopBottomPanel::bottom("my_panel").show(ctx, |ui| {
             let text = match current_level {
                 x if (0..=min_levels).contains(&x) => {
@@ -501,7 +501,7 @@ impl eframe::App for TemplateApp {
 
             let plot_image = PlotImage::new(texture_handle.id(), center.into(), size);
 
-            Plot::new(&plot_id)
+            Plot::new(plot_id)
                 .data_aspect(aspect_ratio)
                 .show(ui, |plot_ui| plot_ui.image(plot_image));
         });

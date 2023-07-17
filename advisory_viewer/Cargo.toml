@@ -11,28 +11,31 @@ license = "MIT OR Apache-2.0"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-egui = "0.21"
-eframe = { version = "0.21", features = [ "persistence" ] }
+egui = "0.22"
+eframe = { version = "0.22", default-features = false, features = [
+    "accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
+    "default_fonts", # Embed the default egui fonts.
+    "glow",          # Use the glow rendering backend. Alternative: "wgpu".
+    "persistence",   # Enable restoring app state when restarting the app.
+] }
+log = "0.4"
+
 serde = { version = "1", features = ["derive"] }
 
+
 opencas = { path = "../opencas" }
-uuid = { version = "1", features = [ "v4" ] }
-uom = "*"
+uuid = { version = "1", features = [ "v4", "js" ] }
+uom.workspace = true
 arc-swap = "1.5" #For atomic double buffers
 atomic-counter = "1.0" #Track progress of image generator
-# ordered-float = "3.4"
 strum = { version = "0", features = [ "derive" ] }
-# frunk = "0"
+futures = "0.3.28"
+
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-tracing-subscriber = "0.3"
-futures = "0.3"
+env_logger = "0.10"
 
 # web:
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-console_error_panic_hook = "0.1.6"
-tracing-wasm = "0.2"
 wasm-bindgen-futures = "0.4"
-getrandom = { version = "*", features = [ "js" ] }
-uuid = { version = "*", features = [ "js" ] }

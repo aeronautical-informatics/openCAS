@@ -43,7 +43,7 @@ impl VisualizerBackend {
 
         let thread = async move {
             let mut lock = data.write().unwrap();
-            (*lock).1 = uuid;
+            lock.1 = uuid;
 
             quad_counter.reset();
             let side_length = 2usize.pow(config.max_levels as u32);
@@ -141,7 +141,7 @@ impl VisualizerNode {
         } else {
             let color = config
                 .output_variants
-                .get(self.value as usize)
+                .get(self.value)
                 .map(|(_, c)| *c)
                 .unwrap_or_else(|| Color32::TRANSPARENT);
             let size = texture.size();
