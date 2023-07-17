@@ -8,4 +8,4 @@ edition = "2021"
 
 [dependencies]
 opencas = { path = "../opencas" }
-uom = { version = "*", default-features = false, features = [ "f32", "si" ] }
+uom = { version = "0", default-features = false, features = [ "f32", "si", "libm" ] }
