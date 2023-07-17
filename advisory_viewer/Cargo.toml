@@ -17,7 +17,7 @@ serde = { version = "1", features = ["derive"] }
 
 opencas = { path = "../opencas" }
 uuid = { version = "1", features = [ "v4" ] }
-uom = "*"
+uom.workspace = true
 arc-swap = "1.5" #For atomic double buffers
 atomic-counter = "1.0" #Track progress of image generator
 # ordered-float = "3.4"
