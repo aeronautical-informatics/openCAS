@@ -7,9 +7,12 @@ members = [
 ]
 
 
-# remove once https://github.com/emilk/egui/pull/1338 lands in a release
-[patch.crates-io]
+[workspace.dependencies]
+# TODO move back to upstream once https://github.com/iliekturtles/uom/pull/309 lands
+uom = { git = "https://github.com/wucke13/uom.git", branch = "fix-missing-libm", default-features = false }
 
+
+[patch.crates-io]
 # If you want to use the bleeding edge version of egui and eframe:
 # egui = { git = "https://github.com/emilk/egui", branch = "master" }
 # eframe = { git = "https://github.com/emilk/egui", branch = "master" }

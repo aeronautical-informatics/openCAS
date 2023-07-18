@@ -1,18 +1,27 @@
 {
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-23.05";
     utils.url = "github:numtide/flake-utils";
     fenix.url = "github:nix-community/fenix";
     fenix.inputs.nixpkgs.follows = "nixpkgs";
     naersk.url = "github:nix-community/naersk";
     naersk.inputs.nixpkgs.follows = "nixpkgs";
+    treefmt-nix.url = "github:numtide/treefmt-nix";
+    treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = { self, nixpkgs, utils, fenix, naersk }:
+  outputs = { self, nixpkgs, utils, fenix, naersk, treefmt-nix }:
     utils.lib.eachDefaultSystem (system:
       let
         lib = nixpkgs.lib;
+
         pkgs = nixpkgs.legacyPackages."${system}";
+
+        treefmt' = {
+          projectRootFile = "flake.nix";
+          settings = with builtins; (fromTOML (readFile ./treefmt.toml));
+        };
+
         toolchain = with fenix.packages.${system};
           combine [
             stable.rustc
@@ -21,10 +30,12 @@
             stable.rustfmt
             targets.wasm32-unknown-unknown.stable.rust-std
           ];
+
         naersk-lib = (naersk.lib.${system}.override {
           cargo = toolchain;
           rustc = toolchain;
         });
+
         requiredLibs = with pkgs;
           [
             libGL
@@ -35,6 +46,7 @@
             xorg.libXxf86vm
             xorg.libxcb
           ] ++ lib.optionals stdenv.isLinux [ libxkbcommon wayland ];
+
         libPath = lib.makeLibraryPath requiredLibs;
       in
       rec {
@@ -77,25 +89,16 @@
             opencas
           ];
           nativeBuildInputs = with pkgs; [
-            binaryen
-            httplz
-            binaryen
-            toolchain
-            cargo-flamegraph
-            (wasm-bindgen-cli.overrideAttrs (prev: rec {
-              version = "0.2.82";
-              src = pkgs.fetchCrate {
-                inherit version;
-                inherit (prev) pname;
-                sha256 = "sha256-BQ8v3rCLUvyCCdxo5U+NHh30l9Jwvk9Sz8YQv6fa0SU=";
-              };
-              cargoDeps = prev.cargoDeps.overrideAttrs (lib.const {
-                name = "${prev.pname}-vendor.tar.gz";
-                inherit src;
-                outputHash =
-                  "sha256-ACo4zG+JK/fW6f9jpfTLPDUYqPqrt9Q2XgCF26jBXkg=";
-              });
-            }))
+            cargo-flamegraph # for performance stuff
+            toolchain # our rust toolchain
+            trunk # for web stuff
+
+            # keep everything neat
+            nixpkgs-fmt
+            nodePackages.prettier
+            treefmt
+
+            # dev stuff
           ];
           buildInputs = packages.advisory_viewer.buildInputs;
           LD_LIBRARY_PATH = libPath;
@@ -104,22 +107,9 @@
           '';
         };
         checks = {
-          format = pkgs.runCommand "check-format"
-            {
-              nativeBuildInputs = [ pkgs.nixpkgs-fmt toolchain ];
-            } ''
-            nixpkgs-fmt --check ${./.}
-            ( cd ${./.} && cargo fmt --check )
-            touch $out
-          '';
-          # clippy = pkgs.runCommand "clippy"
-          #   {
-          #     nativeBuildInputs = [ toolchain ];
-          #   } ''
-          #   ( cd ${./.} && cargo clippy )
-          #   touch $out
-          # '';
-
+          treefmt = ((treefmt-nix.lib.evalModule pkgs treefmt').config.build.check self).overrideAttrs (o: {
+            buildInputs = devShells.default.nativeBuildInputs ++ [ pkgs.git ];
+          });
         };
       });
 }
