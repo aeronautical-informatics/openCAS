@@ -3,6 +3,8 @@ use uom::si::angle::{degree, radian}; // self,
 use uom::si::f32::Time;
 use uom::si::f32::*;
 use uom::si::length::{foot, meter};
+use uom::si::ratio::ratio;
+use uom::typenum::P2;
 // use uom::si::time::second; //Time
 // use uom::si::velocity::{foot_per_second, knot}; //foot_per_minute //, time
 
@@ -43,33 +45,31 @@ pub struct AircraftState {
 pub fn haversine(ownship: &AircraftState, intruder: &AircraftState) -> (Length, Angle) {
     //basics for calculation
     const RADIUS_EARTH: f32 = 6271e3; // in meter
-    let radius = RADIUS_EARTH + ownship.altitude.get::<meter>();
-    let del_lat = (intruder.lat - ownship.lat).get::<radian>();
-    let del_lng = (intruder.lng - ownship.lng).get::<radian>();
+    let radius = Length::new::<meter>(RADIUS_EARTH) + ownship.altitude;
+    let del_lat = intruder.lat - ownship.lat;
+    let del_lng = intruder.lng - ownship.lng;
 
     // distance calc
-    let a = (del_lat / 2.0).sin().powi(2)
-        + ownship.lat.get::<radian>().cos()
-            * intruder.lat.get::<radian>().cos()
-            * (del_lng / 2.0).sin().powi(2);
-    let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
-    let range = Length::new::<meter>(radius * c);
+    let a = (del_lat / 2.0).sin().powi(P2::new())
+        + ownship.lat.cos() * intruder.lat.cos() * (del_lng / 2.0).sin().powi(P2::new());
+    let c = 2.0
+        * a.sqrt()
+            .atan2((Ratio::new::<ratio>(1.0 - a.get::<ratio>())).sqrt());
+    let range = radius * c;
 
     //heading calc: convert atan2() (+/-180 deg) into true bearings => easier to calculate
-    let bearing = (del_lng.sin() * intruder.lat.get::<radian>().cos()).atan2(
-        ownship.lat.get::<radian>().cos() * intruder.lat.get::<radian>().sin()
-            - ownship.lat.get::<radian>().sin()
-                * intruder.lat.get::<radian>().cos()
-                * del_lng.cos(),
+    let bearing = (del_lng.sin() * intruder.lat.cos()).atan2(
+        ownship.lat.cos() * intruder.lat.sin()
+            - ownship.lat.sin() * intruder.lat.cos() * del_lng.cos(),
     );
     // check if initial bearing is correct (checked with online tool - see reference above)
     //println!("bearing: {:?}", bearing * 180.0 / PI);
 
     // this step takes into account that signed addition happens (theta > 180deg => -(360 -x); vise versa)
-    let theta = Angle::new::<radian>(match ownship.heading.get::<radian>() - bearing {
-        b if b < PI => b,
-        _ => ownship.heading.get::<radian>() - bearing - 2.0 * PI,
-    });
+    let theta = match ownship.heading - bearing {
+        b if b < Angle::new::<radian>(PI) => b,
+        _ => ownship.heading - bearing - Angle::new::<radian>(2.0 * PI),
+    };
     (range, theta)
     //ranging error ~1% which is surprisingly high => maybe f32 not precise enough?
 }
@@ -174,3 +174,4 @@ pub fn calc_tau_vertical(ownship: &AircraftState, intruder: &AircraftState) -> T
     let delta_speed = intruder.vertical_speed - ownship.vertical_speed;
     -(altitude) / delta_speed
 }
+
