@@ -174,4 +174,3 @@ pub fn calc_tau_vertical(ownship: &AircraftState, intruder: &AircraftState) -> T
     let delta_speed = intruder.vertical_speed - ownship.vertical_speed;
     -(altitude) / delta_speed
 }
-
