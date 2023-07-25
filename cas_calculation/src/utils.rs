@@ -1,5 +1,4 @@
-use core::f32::consts::PI;
-use uom::si::angle::{degree, radian}; // self,
+use uom::si::angle::degree;
 use uom::si::f32::Time;
 use uom::si::f32::*;
 use uom::si::length::{foot, meter};
@@ -63,22 +62,24 @@ pub fn haversine(ownship: &AircraftState, intruder: &AircraftState) -> (Length, 
             - ownship.lat.sin() * intruder.lat.cos() * del_lng.cos(),
     );
     // check if initial bearing is correct (checked with online tool - see reference above)
-    //println!("bearing: {:?}", bearing * 180.0 / PI);
+    // println!("bearing: {:?}", bearing.get::<degree>());
+    // this calculates the bearing after the regular north; positive clockwise definition
 
-    // this step takes into account that signed addition happens (theta > 180deg => -(360 -x); vise versa)
-    let theta = match ownship.heading - bearing {
-        b if b < Angle::new::<radian>(PI) => b,
-        _ => ownship.heading - bearing - Angle::new::<radian>(2.0 * PI),
+    // This takes into account that our inputs (own.heading and bearing) are in regular north/ positive clockwise standard and needs to convert that to north/ positive counterclockwise
+    let theta = match (ownship.heading - bearing).get::<degree>() {
+        t if (-360.0..-180.0).contains(&t) => Angle::new::<degree>(360.0 + t),
+        t if (180.0..360.0).contains(&t) => Angle::new::<degree>(t - 360.0),
+        _ => ownship.heading - bearing,
     };
     (range, theta)
-    //ranging error ~1% which is surprisingly high => maybe f32 not precise enough?
+    //ranging error ~1-3% which is surprisingly high
 }
 
 /// Relative heading between intruder and ownship
 ///
 /// Output:
 ///
-/// Psi ψ - angle between heading of ownship and heading of intruder (possitive - from north counterclockwise)
+/// Psi ψ - angle between heading of ownship and heading of intruder (positive - from north counterclockwise)
 ///
 /// example:
 /// + both have the same heading -> psi = 0 degrees
