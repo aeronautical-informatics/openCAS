@@ -135,7 +135,7 @@ pub fn calc_tau_horizontal(ownship: &AircraftState, intruder: &AircraftState) ->
     // calculate relative speed
     // Coordinate system is based on flight direction of ownship
     // Flight direction is positive y-axis
-    // positive x-axis is accordingly to right hand side 
+    // positive x-axis is accordingly to right hand side
     // sin(-psi) is positive because psi is ccwise oriented -> sin(eg. 45 degree) point to left hand side
     // cos(-x) = cos(x) therefore no further adaption needed
     let v_fwrd_ownship = ownship.groundspeed;
@@ -144,8 +144,8 @@ pub fn calc_tau_horizontal(ownship: &AircraftState, intruder: &AircraftState) ->
     let v_sidewrd_intruder = intruder.groundspeed * (-psi).sin();
 
     // relative Speed referenced to ownship V_io
-    let v_fwrd =   v_fwrd_intruder -v_fwrd_ownship;
-    let v_sdwrd =  v_sidewrd_intruder - v_sidewrd_ownship;
+    let v_fwrd = v_fwrd_intruder - v_fwrd_ownship;
+    let v_sdwrd = v_sidewrd_intruder - v_sidewrd_ownship;
 
     // get x/y direction for vector math
     // pos.: x-direction due to theta = pos. ccwise -> sin(-x) to make it cwise and x-axis positive to the right
