@@ -121,38 +121,42 @@ pub fn relative_altitudes(ownship: &AircraftState, intruder: &AircraftState) -> 
 ///
 /// Tau_horizontal τ - calculation based on CPA (closest point of aproach)
 
-// calculate tau until horizontal collision THE HARDEST CALCULATION OF THEM ALL...
+// calculate tau until horizontal collision is THE HARDEST CALCULATION OF THEM ALL...
 // After a lot of confusion and consideration, the final decision comes from the paper
 // "Julian/Sharma/Jeannin/Kochenderfer: Verifying Aircraft Collision Avoidance Neural Networks Through Linear Approximations of Safe Regions"
-// which states that tau is equal to tau = (r - r_p)/v_rel
-// r==horizontal separation aka range; r_p==safety range (minimal distance for NMAC -> in paper == 500ft); v_rel== relative velocity
+// which states: tau = (r - r_p)/v_rel
+// r==horizontal separation aka range; r_p==safety range (minimal distance for NMAC -> in paper == 500ft); v_rel == relative velocity
 pub fn calc_tau_horizontal(ownship: &AircraftState, intruder: &AircraftState) -> Time {
     // get range
     let (range, theta) = haversine(ownship, intruder);
+    let psi = heading_angles(ownship, intruder);
     let r_p = Length::new::<foot>(500.0);
 
-    // get relative velocity relative to north => should make it a bit easier than doing the calculations in a transformed system
-    let v_fwrd_ownship = ownship.groundspeed * ownship.heading.cos();
-    let v_sidewrd_ownship = ownship.groundspeed * ownship.heading.sin();
-    let v_fwrd_intruder = intruder.groundspeed * intruder.heading.cos();
-    let v_sidewrd_intruder = intruder.groundspeed * intruder.heading.sin();
+    // calculate relative speed
+    // Coordinate system is based on flight direction of ownship
+    // Flight direction is positive y-axis
+    // positive x-axis is accordingly to right hand side 
+    // sin(-psi) is positive because psi is ccwise oriented -> sin(eg. 45 degree) point to left hand side
+    // cos(-x) = cos(x) therefore no further adaption needed
+    let v_fwrd_ownship = ownship.groundspeed;
+    let v_sidewrd_ownship = Velocity::new::<uom::si::velocity::foot_per_second>(0.0);
+    let v_fwrd_intruder = intruder.groundspeed * psi.cos();
+    let v_sidewrd_intruder = intruder.groundspeed * (-psi).sin();
 
-    // Speed relative to ownship V_io
-    let v_fwrd = v_fwrd_ownship - v_fwrd_intruder;
-    let v_sdwrd = v_sidewrd_ownship - v_sidewrd_intruder;
-
-    // do I need to do the mathematical conversion here or can I just trust the uom lib to do it correctly afterwards?
-    // let v_rel = Velocity::new::<foot_per_second>(
-    //     (v_fwrd.get::<foot_per_second>().powi(2) + v_sdwrd.get::<foot_per_second>().powi(2)).sqrt(),
-    // );
+    // relative Speed referenced to ownship V_io
+    let v_fwrd =   v_fwrd_intruder -v_fwrd_ownship;
+    let v_sdwrd =  v_sidewrd_intruder - v_sidewrd_ownship;
 
     // get x/y direction for vector math
-    let x_direction = (range - r_p) * (theta).sin();
-    let y_direction = (range - r_p) * (theta).cos();
+    // pos.: x-direction due to theta = pos. ccwise -> sin(-x) to make it cwise and x-axis positive to the right
+    // y-axis positive upwards (/forward in terms of the speed)
+    let x_direction = (range - r_p) * (-theta).sin();
+    let y_direction = (range - r_p) * theta.cos();
 
     // math from "Collision Avoidance Law Using Information Amount" Seiya Ueno and Takehiro Higuchi
+    // which basically is (r - r_p)/v_rel from above but also factors in the direction of flight (basically unit vector on velocity)
     let tau =
-        -(x_direction * v_sdwrd - y_direction * v_fwrd) / (v_sdwrd * v_sdwrd + v_fwrd * v_fwrd);
+        -(x_direction * v_sdwrd + y_direction * v_fwrd) / (v_sdwrd * v_sdwrd + v_fwrd * v_fwrd);
 
     tau
 }
