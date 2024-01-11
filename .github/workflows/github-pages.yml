@@ -27,7 +27,7 @@ jobs:
       - name: Build Website
         run: |
           cd advisory_viewer
-          nix develop --command trunk build --release
+          nix develop --command trunk build --public-url openCAS --release
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v3
         with:
