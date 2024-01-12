@@ -11,13 +11,14 @@ license = "MIT OR Apache-2.0"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-egui = "0.22"
-eframe = { version = "0.22", default-features = false, features = [
+egui = "0.25"
+eframe = { version = "0.25", default-features = false, features = [
     "accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
     "default_fonts", # Embed the default egui fonts.
     "glow",          # Use the glow rendering backend. Alternative: "wgpu".
     "persistence",   # Enable restoring app state when restarting the app.
 ] }
+egui_plot = "0.25"
 log = "0.4"
 
 serde = { version = "1", features = ["derive"] }
@@ -35,6 +36,8 @@ futures = "0.3.28"
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "0.10"
+image = "0.24"
+chrono = "0.4"
 
 # web:
 [target.'cfg(target_arch = "wasm32")'.dependencies]

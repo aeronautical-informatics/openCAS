@@ -1,9 +1,10 @@
 use std::{collections::HashMap, ops::RangeInclusive};
 
-use egui::{
-    self, plot::Plot, plot::PlotImage, Align, Color32, ColorImage, DragValue, ProgressBar,
-    TextureHandle, TextureOptions,
-};
+#[cfg(not(target_arch = "wasm32"))]
+use chrono::{DateTime, Local};
+
+use egui::{Align, Color32, ColorImage, DragValue, ProgressBar, TextureHandle, TextureOptions};
+use egui_plot::{Plot, PlotImage};
 use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
 use uom::si::{angle::radian, f32::*, length::foot, time::second, velocity::foot_per_second};
@@ -141,9 +142,33 @@ impl Visualizable {
         }
     }
 
+    #[allow(unused_variables)]
+    fn save_screenshot(ui: &mut egui::Ui) {
+        #[cfg(not(target_arch = "wasm32"))]
+        ui.input(|i| {
+            for event in &i.raw.events {
+                if let egui::Event::Screenshot { image, .. } = event {
+                    let local: DateTime<Local> = Local::now();
+                    let screenshot_name = local
+                        .format("OpenCAS_screenshot_%Y-%m-%d_%H:%M:%S.png")
+                        .to_string();
+                    image::save_buffer(
+                        screenshot_name,
+                        image.as_raw(),
+                        image.width() as u32,
+                        image.height() as u32,
+                        image::ColorType::Rgba8,
+                    )
+                    .unwrap();
+                }
+            }
+        })
+    }
+
     /// draw the config panel for this visualizable
     /// returns true, if a significant value changed
-    fn draw_config(&mut self, ui: &mut egui::Ui) -> bool {
+    #[allow(unused_variables)]
+    fn draw_config(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) -> bool {
         let old_input_values = self.input_values.clone();
         let old_pra = self.pra;
         egui::Grid::new("gui_settings_grid")
@@ -288,6 +313,14 @@ impl Visualizable {
                 if ui.button("reset all").clicked() {
                     *self = self.viewee.into()
                 }
+                #[cfg(not(target_arch = "wasm32"))]
+                if ui
+                    .button("save screenshot")
+                    .on_hover_text("save screenshot to the working directory")
+                    .clicked()
+                {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
+                }
             });
         self.input_values != old_input_values || self.pra != old_pra
     }
@@ -362,14 +395,6 @@ impl Default for TemplateApp {
 }
 
 impl eframe::App for TemplateApp {
-    /// Set the maximum size of the canvas for WebGL based renderers
-    fn max_size_points(&self) -> eframe::egui::Vec2 {
-        eframe::egui::Vec2 {
-            x: f32::MAX,
-            y: f32::MAX,
-        }
-    }
-
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
@@ -399,9 +424,11 @@ impl eframe::App for TemplateApp {
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.heading(format!("Settings for {}", viewer_key.as_ref()));
-                if viewer.draw_config(ui) {
+                if viewer.draw_config(ctx, ui) {
                     self.last_viewer_config = None;
                 }
+
+                Visualizable::save_screenshot(ui);
 
                 // help menu
                 ui.separator();
