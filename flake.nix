@@ -100,7 +100,8 @@
             treefmt
 
             # dev stuff
-          ];
+            rust-analyzer # for better coding
+          ] ++ requiredLibs;
           buildInputs = packages.advisory_viewer.buildInputs;
           LD_LIBRARY_PATH = libPath;
           shellHook = ''
