@@ -412,7 +412,7 @@ impl eframe::App for TemplateApp {
                     .striped(true)
                     .show(ui, |ui| {
                         let hints = [
-                            ("Left-Click + Mousedrag", "move the plot arround"),
+                            ("Left-Click + Mousedrag", "move the plot around"),
                             ("Mousewheel", "move plot vertical"),
                             ("Mousewheel + Shift", "move plot horizontally"),
                             ("Mousehweel + Control", "zoom plot in/out"),
