@@ -1,9 +1,9 @@
 use std::{collections::HashMap, ops::RangeInclusive};
 
 use egui::{
-    self, plot::Plot, plot::PlotImage, Align, Color32, ColorImage, DragValue, ProgressBar,
-    TextureHandle, TextureOptions,
+    self, Align, Color32, ColorImage, DragValue, ProgressBar, TextureHandle, TextureOptions,
 };
+use egui_plot::{Plot, PlotImage};
 use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
 use uom::si::{angle::radian, f32::*, length::foot, time::second, velocity::foot_per_second};
@@ -362,14 +362,6 @@ impl Default for TemplateApp {
 }
 
 impl eframe::App for TemplateApp {
-    /// Set the maximum size of the canvas for WebGL based renderers
-    fn max_size_points(&self) -> eframe::egui::Vec2 {
-        eframe::egui::Vec2 {
-            x: f32::MAX,
-            y: f32::MAX,
-        }
-    }
-
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {

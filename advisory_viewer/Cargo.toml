@@ -4,15 +4,11 @@ version = "0.1.0"
 authors = ["Wanja Zaeske <wanja.zaeske@dlr.de>"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[lib]
-crate-type = ["cdylib", "rlib"]
+rust-version = "1.76"
 
 [dependencies]
-egui = "0.22"
-eframe = { version = "0.22", default-features = false, features = [
+egui = "0.27.0"
+eframe = { version = "0.27.0", default-features = false, features = [
     "accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
     "default_fonts", # Embed the default egui fonts.
     "glow",          # Use the glow rendering backend. Alternative: "wgpu".
@@ -20,16 +16,20 @@ eframe = { version = "0.22", default-features = false, features = [
 ] }
 log = "0.4"
 
+# You only need serde if you want app persistence:
 serde = { version = "1", features = ["derive"] }
 
-
+#
+# Custom dependencies
+#
 opencas = { path = "../opencas" }
 uuid = { version = "1", features = [ "v4", "js" ] }
 uom.workspace = true
-arc-swap = "1.5" #For atomic double buffers
+arc-swap = "1.7" #For atomic double buffers
 atomic-counter = "1.0" #Track progress of image generator
 strum = { version = "0", features = [ "derive" ] }
 futures = "0.3.28"
+egui_plot = "0.27.2"
 
 
 # native:
@@ -39,3 +39,11 @@ env_logger = "0.10"
 # web:
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = "0.4"
+
+
+[profile.release]
+opt-level = 2 # fast and small wasm
+
+# Optimize all dependencies even in debug builds:
+[profile.dev.package."*"]
+opt-level = 2
