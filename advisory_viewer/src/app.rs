@@ -513,11 +513,11 @@ impl eframe::App for TemplateApp {
                 })
                 .x_axis_label(format!("{} ({})", viewer.x_axis().name, viewer.x_axis().description))
                 .x_axis_formatter(move |gm, _max_chars, _range| {
-                    format!("{:.*} in {x_axis_unit}", get_precision(gm.value), gm.value)
+                    format!("{:.*} {x_axis_unit}", get_precision(gm.value), gm.value)
                 })
                 .y_axis_label(format!("{} ({})", viewer.y_axis().name, viewer.y_axis().description))
                 .y_axis_formatter(move |gm, _max_chars, _range| {
-                    format!("{:.*} in {y_axis_unit}", get_precision(gm.value), gm.value)
+                    format!("{:.*} {y_axis_unit}", get_precision(gm.value), gm.value)
                 })
                 .show(ui, |plot_ui| plot_ui.image(plot_image));
         });
