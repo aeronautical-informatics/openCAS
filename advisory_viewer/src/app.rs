@@ -27,7 +27,8 @@ pub struct Input {
 
 impl std::fmt::Display for Input {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} [{}]", self.name, self.unit)
+        let &Self { name, unit, .. } = self;
+        write!(f, "{name} in {unit}")
     }
 }
 
@@ -216,7 +217,8 @@ impl Visualizable {
                 for i in &mut self.inputs {
                     let (mut min, mut max) = i.range.clone().into_inner();
 
-                    ui.label(format!("{} range [{}]", i.name, i.unit))
+                    let &mut Input { name, unit, .. } = i;
+                    ui.label(format!("{name} range in {unit}"))
                         .on_hover_text(i.description);
 
                     size = (
@@ -493,9 +495,43 @@ impl eframe::App for TemplateApp {
 
             let plot_image = PlotImage::new(texture_handle.id(), center.into(), size);
 
+            let x_axis_name = viewer.x_axis().name;
+            let y_axis_name = viewer.y_axis().name;
+            let x_axis_unit = viewer.x_axis().unit;
+            let y_axis_unit = viewer.y_axis().unit;
+
             Plot::new(plot_id)
                 .data_aspect(aspect_ratio)
+                .label_formatter(move |name, value| {
+                    let filler = if name.is_empty() { "" } else { "\n" };
+                    let precision_x = get_precision(value.x);
+                    let precision_y = get_precision(value.y);
+                    format!(
+                        "{name}{filler}{x_axis_name} = {:.*} {x_axis_unit}\n{y_axis_name} = {:.*} {y_axis_unit}",
+                        precision_x, value.x, precision_y, value.y,
+                    )
+                })
+                .x_axis_label(format!("{} ({})", viewer.x_axis().name, viewer.x_axis().description))
+                .x_axis_formatter(move |gm, _max_chars, _range| {
+                    format!("{:.*} in {x_axis_unit}", get_precision(gm.value), gm.value)
+                })
+                .y_axis_label(format!("{} ({})", viewer.y_axis().name, viewer.y_axis().description))
+                .y_axis_formatter(move |gm, _max_chars, _range| {
+                    format!("{:.*} in {y_axis_unit}", get_precision(gm.value), gm.value)
+                })
                 .show(ui, |plot_ui| plot_ui.image(plot_image));
         });
+    }
+}
+
+const MINIMUM_DIGITS: u8 = 5;
+/// Calucalte a good precision (count of decimals) to format the number `value`
+fn get_precision(value: f64) -> usize {
+    // if the number is not sensible (inf, nan, ...) or has no decimals, we don't want any decimals
+    if !value.is_normal() || value.fract() == 0.0 {
+        0
+    } else {
+        let order_of_magnitude = value.abs().log10();
+        (MINIMUM_DIGITS as f64 - order_of_magnitude).max(0.0) as usize
     }
 }
