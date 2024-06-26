@@ -193,7 +193,7 @@ fn hcas_nnets() -> TokenStream {
 
     quote!(
         /// NNet structs of the HorizontalCAS
-        pub const HCAS_NNETS: [ [ #nnet_type ; #tau_value_count ]; #pra_value_count ] =
+        pub static HCAS_NNETS: [ [ #nnet_type ; #tau_value_count ]; #pra_value_count ] =
             [ #(
                 [ #(
                     #chunked_nnets
