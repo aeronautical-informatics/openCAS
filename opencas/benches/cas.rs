@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::Rng;
 use std::time::Duration;
 use uom::si::{
@@ -36,7 +36,14 @@ fn criterion_benchmark_horizontal(c: &mut Criterion) {
             let mut cas = HCas { last_advisory: pra };
 
             group.bench_function(&bench_name, |b| {
-                b.iter(|| cas.process_polar(tau, range, theta, psi))
+                b.iter(|| {
+                    cas.process_polar(
+                        black_box(tau),
+                        black_box(range),
+                        black_box(theta),
+                        black_box(psi),
+                    )
+                })
             });
         }
     }
@@ -70,7 +77,14 @@ fn criterion_benchmark_vertical(c: &mut Criterion) {
         let mut cas = VCas { last_advisory: pra };
 
         group.bench_function(&bench_name, |b| {
-            b.iter(|| cas.process(height, vert_speed_homeship, vert_speed_intruder, tau))
+            b.iter(|| {
+                cas.process(
+                    black_box(height),
+                    black_box(vert_speed_homeship),
+                    black_box(vert_speed_intruder),
+                    black_box(tau),
+                )
+            })
         });
     }
 }
