@@ -8,7 +8,7 @@ fn main() -> eframe::Result<()> {
 
     let native_options = eframe::NativeOptions::default();
     eframe::run_native(
-        "eframe template",
+        "openCAS Advisory Viewer",
         native_options,
         Box::new(|cc| Box::new(advisory_viewer::TemplateApp::new(cc))),
     )
