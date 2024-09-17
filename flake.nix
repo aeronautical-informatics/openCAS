@@ -100,6 +100,7 @@
             treefmt
 
             # dev stuff
+            rust-analyzer
           ];
           buildInputs = packages.advisory_viewer.buildInputs;
           LD_LIBRARY_PATH = libPath;

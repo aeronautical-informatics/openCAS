@@ -206,7 +206,7 @@ impl Visualizable {
                     ui.add_sized(
                         size,
                         DragValue::new(&mut self.input_values[idx])
-                            .clamp_range(input.range.clone())
+                            .range(input.range.clone())
                             .speed(drag_value_speed),
                     );
                     //});
@@ -232,14 +232,14 @@ impl Visualizable {
                         ui.add_sized(
                             size,
                             DragValue::new(&mut min)
-                                .clamp_range(f32::MIN..=max - f32::EPSILON)
+                                .range(f32::MIN..=max - f32::EPSILON)
                                 .speed(drag_value_speed),
                         );
                         ui.with_layout(egui::Layout::right_to_left(Align::LEFT), |ui| {
                             ui.add_sized(
                                 size,
                                 DragValue::new(&mut max)
-                                    .clamp_range(min + f32::EPSILON..=f32::MAX)
+                                    .range(min + f32::EPSILON..=f32::MAX)
                                     .speed(drag_value_speed),
                             );
                         });
@@ -275,7 +275,7 @@ impl Visualizable {
                     .on_hover_text("The start resolution of the plot.");
                 ui.add(
                     DragValue::new(&mut self.min_level)
-                        .clamp_range(1..=self.max_level)
+                        .range(1..=self.max_level)
                         .speed(level_speed),
                 );
                 ui.end_row();
@@ -283,7 +283,7 @@ impl Visualizable {
                     .on_hover_text("The maximum resolution of the plot");
                 ui.add(
                     DragValue::new(&mut self.max_level)
-                        .clamp_range(self.min_level..=15) // 2 ** (15 * 2) is equivalent to more than 1 giga pixel in resolution, that should suffice
+                        .range(self.min_level..=15) // 2 ** (15 * 2) is equivalent to more than 1 giga pixel in resolution, that should suffice
                         .speed(level_speed),
                 );
                 ui.end_row();
@@ -512,11 +512,11 @@ impl eframe::App for TemplateApp {
                     )
                 })
                 .x_axis_label(format!("{} ({})", viewer.x_axis().name, viewer.x_axis().description))
-                .x_axis_formatter(move |gm, _max_chars, _range| {
+                .x_axis_formatter(move |gm, _range| {
                     format!("{:.*} {x_axis_unit}", get_precision(gm.value), gm.value)
                 })
                 .y_axis_label(format!("{} ({})", viewer.y_axis().name, viewer.y_axis().description))
-                .y_axis_formatter(move |gm, _max_chars, _range| {
+                .y_axis_formatter(move |gm, _range| {
                     format!("{:.*} {y_axis_unit}", get_precision(gm.value), gm.value)
                 })
                 .show(ui, |plot_ui| plot_ui.image(plot_image));
