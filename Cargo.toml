@@ -4,12 +4,17 @@ resolver = "2"
 members = [
     "opencas",
     "advisory_viewer",
+    "kd_tree",
+    "kd_tree_sort",
 ]
 
 
 [workspace.dependencies]
 # TODO move back to upstream once https://github.com/iliekturtles/uom/pull/309 lands
 uom = { git = "https://github.com/wucke13/uom.git", branch = "fix-missing-libm", default-features = false }
+opencas.path = "opencas"
+kd_tree.path = "kd_tree"
+kd_tree_sort.path = "kd_tree_sort"
 
 
 [patch.crates-io]

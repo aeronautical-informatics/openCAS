@@ -72,15 +72,22 @@ impl TryFrom<u8> for HAdvisory {
     }
 }
 
-impl HCas {
-    /// HorizontalCAS consists of 40 different neural networks (smaller network = les runtime). The
-    /// splitting parameters are:
-    ///
-    /// + time until impact: tau [sec]
-    /// + previous given advisory: pra [-]
-    ///
-    /// Based on those parameters the right network is chosen.
-    ///
+// TODO
+// table uses polar coordinates
+// nnet uses cartesian coordiantes
+// nnet is locked to speeds of 200/185
+// units can be found in the paper pdf
+// https://gitlab.dlr.de/beck_jk/cas-k-d-tree-test/-/blob/main/advisory_data_output.csv?ref_type=heads
+
+pub trait HCasAdvisory {
+    fn process_cartesian(
+        &mut self,
+        tau: Time,
+        forward_range: Length,
+        left_range: Length,
+        psi: Angle,
+    ) -> (HAdvisory, f32);
+
     /// HorizontalCAS, as we use it, needs three inputs:
     /// + `range` [ft]: absolute distance between homeship and intruder
     /// + `theta`[rad]: angle from homeships heading to intruder in the mathematical sense
@@ -93,7 +100,32 @@ impl HCas {
     /// `theta` = 5° => intruder is slidely on the left of the homeships heading.
     /// `psi` = 90° / pi/2 => intruder is flying to the left perpendicular to the homeships
     /// heading. See [figure 3](https://arxiv.org/pdf/1912.07084.pdf).
-    pub fn process_polar(
+    fn process_polar(
+        &mut self,
+        tau: Time,
+        range: Length,
+        theta: Angle,
+        psi: Angle,
+    ) -> (HAdvisory, f32) {
+        self.process_cartesian(
+            tau,
+            range * (theta.get::<radian>().cos()),
+            range * (theta.get::<radian>().sin()),
+            psi,
+        )
+    }
+}
+
+impl HCasAdvisory for HCas {
+    /// HorizontalCAS consists of 40 different neural networks (smaller network = les runtime). The
+    /// splitting parameters are:
+    ///
+    /// + time until impact: tau [sec]
+    /// + previous given advisory: pra [-]
+    ///
+    /// Based on those parameters the right network is chosen.
+    ///
+    fn process_polar(
         &mut self,
         tau: Time,
         range: Length,
@@ -108,7 +140,7 @@ impl HCas {
         )
     }
 
-    pub fn process_cartesian(
+    fn process_cartesian(
         &mut self,
         tau: Time,
         forward_range: Length,
@@ -193,7 +225,17 @@ impl TryFrom<u8> for VAdvisory {
     }
 }
 
-impl VCas {
+pub trait VCasAdvisory {
+    fn process(
+        &mut self,
+        height: Length,
+        vertical_speed_homeship: Velocity,
+        vertical_speed_intruder: Velocity,
+        tau: Time,
+    ) -> (VAdvisory, f32);
+}
+
+impl VCasAdvisory for VCas {
     /// The VerticalCAS contains 9 different networks.
     ///
     /// There are 4 specific inputs:
@@ -201,7 +243,7 @@ impl VCas {
     /// + Vertical speed of homeship [ft/min]
     /// + Vertical speed of intruder [ft/min]
     /// + time until horizontal seperation loss: tau [sec]
-    pub fn process(
+    fn process(
         &mut self,
         height: Length,
         vertical_speed_homeship: Velocity,

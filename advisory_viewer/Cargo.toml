@@ -22,7 +22,7 @@ serde = { version = "1", features = ["derive"] }
 #
 # Custom dependencies
 #
-opencas = { path = "../opencas" }
+opencas.workspace = true
 uuid = { version = "1", features = [ "v4", "js" ] }
 uom.workspace = true
 arc-swap = "1.7" #For atomic double buffers

@@ -1,6 +1,7 @@
 use csv::Trim;
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{quote, ToTokens};
+use serde::{Deserialize, Deserializer};
 use std::{
     env,
     fs::{self, File},
@@ -8,6 +9,14 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
+use uom::si::{
+    angle::degree,
+    f32::{Angle, Length, Time, Velocity},
+    length::foot,
+    time::second,
+    velocity::foot_per_second,
+};
+use xz2::bufread::XzDecoder;
 
 /// This macro is simplifying some code later on.
 ///
@@ -232,6 +241,136 @@ fn vcas_nnets() -> TokenStream {
     )
 }
 
+fn deserialize_foot<'de, D>(de: D) -> Result<Length, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let length: f32 = Deserialize::deserialize(de)?;
+    Ok(Length::new::<foot>(length))
+}
+
+fn deserialize_degree<'de, D>(de: D) -> Result<Angle, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let angle: f32 = Deserialize::deserialize(de)?;
+    Ok(Angle::new::<degree>(angle))
+}
+
+fn deserialize_feet_per_sec<'de, D>(de: D) -> Result<Velocity, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let velo: f32 = Deserialize::deserialize(de)?;
+    Ok(Velocity::new::<foot_per_second>(velo))
+}
+
+fn deserialize_sec<'de, D>(de: D) -> Result<Time, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let time: f32 = Deserialize::deserialize(de)?;
+    Ok(Time::new::<second>(time))
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct HCasSafetynetRecord {
+    #[serde(deserialize_with = "deserialize_foot")]
+    range: Length,
+    #[serde(deserialize_with = "deserialize_degree")]
+    bearing_angle: Angle,
+    #[serde(deserialize_with = "deserialize_degree")]
+    relative_heading_angle_intruder: Angle,
+    #[serde(deserialize_with = "deserialize_feet_per_sec")]
+    ownship_speed: Velocity,
+    #[serde(deserialize_with = "deserialize_feet_per_sec")]
+    intruder_speed: Velocity,
+    #[serde(deserialize_with = "deserialize_sec")]
+    time: Time,
+    previous_advirsory: u8,
+    advisory_mdp: u8,
+    advisory_nn: u8,
+    advisory_equal: bool,
+}
+
+impl HCasSafetynetRecord {
+    fn cartesian_coordinates(&self) -> (Length, Length) {
+        let x = self.range * self.bearing_angle.cos();
+        let y = self.range * self.bearing_angle.sin();
+        (x, y)
+    }
+}
+
+impl ToTokens for HCasSafetynetRecord {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let advisory = self.advisory_mdp;
+        let equal = self.advisory_equal;
+        tokens.extend(quote! {
+            SafetynetAdvisory {
+                advisory: #advisory,
+                equal: #equal,
+            }
+        })
+    }
+}
+
+/// Parse a `.nnet` file, and emits the equivalent `TokenStream` to instantiat an equal `NNet`
+/// struct
+///
+/// Returns a tuple consisting of two elements:
+/// + `TokenStream` instantiating the `NNet` struct
+/// + `TokenStream` describing the type of said `NNet` struct
+fn hcas_safetynet<P: AsRef<Path>>(snet_file: P) -> TokenStream {
+    let f = File::open(snet_file).expect("file does not exits");
+    let reader = XzDecoder::new(BufReader::new(f));
+    let mut csv_reader = csv::ReaderBuilder::new()
+        .flexible(true)
+        .double_quote(false)
+        .trim(Trim::All)
+        .from_reader(reader);
+
+    let mut values = Vec::new();
+
+    for record in csv_reader
+        .deserialize::<HCasSafetynetRecord>()
+        .map(|e| e.unwrap())
+    {
+        let (x, y) = record.cartesian_coordinates();
+        let dimensions = [
+            x.value,
+            y.value,
+            record.relative_heading_angle_intruder.value,
+            record.time.value,
+            record.previous_advirsory as f32,
+        ];
+        let value = record;
+        values.push((dimensions, value));
+    }
+
+    let values = kd_tree_sort::sort(values);
+    let values: String = values
+        .iter()
+        .fold(String::new(), |mut s, ([v, w, x, y, z], a)| {
+            s.push_str(
+                &quote! {
+                    Node::new(
+                         [ #v, #w, #x, #y, #z ],
+                        #a
+                    )
+                }
+                .to_string(),
+            );
+            s.push(',');
+            s
+        });
+    let num_values = values.len();
+    let max_level = num_values.ilog2() + 2;
+    quote! {
+        pub const NODES: [Node<f64, SafetynetAdvisory, 5>; #num_values ] = #values ;
+        pub const SAFETYNET: Tree::<f64, SafetynetAdvisory, 5, #max_level > = Tree::new( &NODES );
+    }
+}
+
 fn main() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("nnets.rs");
@@ -248,6 +387,10 @@ fn main() {
     );
 
     fs::write(&dest_path, combined.to_string().replace(';', &indent)).unwrap();
+
+    let dest_path = Path::new(&out_dir).join("snet.rs");
+    let hcas_safety_tree = hcas_safetynet("snets/HCAS_safetynet.csv.xz");
+    fs::write(&dest_path, hcas_safety_tree.to_string()).unwrap();
 
     // format the generated source code
     if let Err(e) = Command::new("rustfmt")

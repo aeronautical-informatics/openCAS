@@ -4,6 +4,7 @@ use egui::{
     self, Align, Color32, ColorImage, DragValue, ProgressBar, TextureHandle, TextureOptions,
 };
 use egui_plot::{Plot, PlotImage};
+use opencas::{HCasAdvisory, VCasAdvisory};
 use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
 use uom::si::{angle::radian, f32::*, length::foot, time::second, velocity::foot_per_second};
@@ -145,6 +146,7 @@ impl Visualizable {
     /// draw the config panel for this visualizable
     /// returns true, if a significant value changed
     fn draw_config(&mut self, ui: &mut egui::Ui) -> bool {
+        let max_possible_level = ui.input(|i| i.max_texture_side).ilog2() as usize;
         let old_input_values = self.input_values.clone();
         let old_pra = self.pra;
         egui::Grid::new("gui_settings_grid")
@@ -283,7 +285,7 @@ impl Visualizable {
                     .on_hover_text("The maximum resolution of the plot");
                 ui.add(
                     DragValue::new(&mut self.max_level)
-                        .range(self.min_level..=15) // 2 ** (15 * 2) is equivalent to more than 1 giga pixel in resolution, that should suffice
+                        .range(self.min_level..=max_possible_level)
                         .speed(level_speed),
                 );
                 ui.end_row();
