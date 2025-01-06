@@ -9,6 +9,8 @@
 use core::convert::TryFrom;
 
 use inference::Vector;
+#[cfg(feature = "serde")]
+use serde::{Serialize, Deserialize};
 
 #[allow(unused_imports)]
 use num::Float;
@@ -48,6 +50,7 @@ pub struct HCas {
 }
 
 /// HAdvisory stores all possible output evaluations.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HAdvisory {
     ClearOfConflict = 0,
@@ -161,6 +164,7 @@ pub struct VCas {
 }
 
 /// VAdvisory stores all possible output evaluations.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VAdvisory {
     ClearOfConflict = 0,

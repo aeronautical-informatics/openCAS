@@ -4,6 +4,9 @@ version = "0.2.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 
+[features]
+serde = ["dep:serde"]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [build-dependencies]
 csv = "1"
@@ -14,6 +17,7 @@ quote = "1"
 nalgebra = { version = "0.32", default-features = false, features = [ "macros" ] }
 num = { version = "*", default-features = false, features = [ "libm" ] }
 uom = { workspace = true, default-features = false, features = [ "f32", "si" ] }
+serde = { version = "1.0", optional = true, default-features = false, features = ["derive"] }
 
 [dev-dependencies]
 criterion = { version = "0.4", features = [ "html_reports" ] } 
